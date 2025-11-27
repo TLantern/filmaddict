@@ -69,3 +69,24 @@ export interface SavedClipResponse {
   status: string;
 }
 
+export interface ClipDetailResponse {
+  id: string;
+  video_id: string;
+  start: number;
+  end: number;
+  video_url: string;
+  video_duration: number;
+  thumbnail_url: string | null;
+}
+
+export interface ProjectResponse {
+  video_id: string;
+  created_at: string;
+  duration: number | null;
+  clip_count: number;
+}
+
+export interface ProjectsResponse {
+  projects: ProjectResponse[];
+}
+

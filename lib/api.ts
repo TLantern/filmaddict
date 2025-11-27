@@ -6,6 +6,9 @@ import {
   ClipFeedbackRequest,
   ClipFeedbackResponse,
   SavedClipResponse,
+  ClipDetailResponse,
+  ClipResponse,
+  ProjectsResponse,
 } from "./types";
 
 const API_BASE_URL = "http://localhost:8000";
@@ -65,6 +68,21 @@ export function getClipPlaybackUrl(clipId: string): string {
   return `${API_BASE_URL}/clips/${clipId}/download`;
 }
 
+export async function getClipPlaybackUrlDirect(clipId: string): Promise<string> {
+  // Fetch the redirect URL to get the actual S3 presigned URL
+  const response = await fetch(`${API_BASE_URL}/clips/${clipId}/download`, {
+    method: "HEAD",
+    redirect: "follow",
+  });
+  
+  if (response.redirected && response.url) {
+    return response.url;
+  }
+  
+  // Fallback to the original URL if no redirect
+  return getClipPlaybackUrl(clipId);
+}
+
 export function getClipThumbnailUrl(clipId: string): string {
   return `${API_BASE_URL}/clips/${clipId}/thumbnail`;
 }
@@ -116,5 +134,55 @@ export async function triggerLearning(): Promise<{
     prompt_evaluated: boolean;
     prompt_promoted: boolean;
   }>(response);
+}
+
+export async function getAllClips(): Promise<ClipsResponse> {
+  const response = await fetch(`${API_BASE_URL}/clips`);
+  return handleResponse<ClipsResponse>(response);
+}
+
+export async function getSavedClips(): Promise<ClipResponse[]> {
+  const response = await fetch(`${API_BASE_URL}/clips/saved`);
+  return handleResponse<ClipResponse[]>(response);
+}
+
+export async function deleteAllClips(): Promise<{ status: string; count: number }> {
+  const response = await fetch(`${API_BASE_URL}/clips`, {
+    method: "DELETE",
+  });
+  return handleResponse<{ status: string; count: number }>(response);
+}
+
+export async function getClipDetail(clipId: string): Promise<ClipDetailResponse> {
+  const response = await fetch(`${API_BASE_URL}/clips/${clipId}`);
+  return handleResponse<ClipDetailResponse>(response);
+}
+
+export async function editClip(
+  clipId: string,
+  newStart: number,
+  newEnd: number
+): Promise<ClipResponse> {
+  const response = await fetch(`${API_BASE_URL}/clips/${clipId}/edit`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      new_start: newStart,
+      new_end: newEnd,
+    }),
+  });
+  return handleResponse<ClipResponse>(response);
+}
+
+export async function getProjects(): Promise<ProjectsResponse> {
+  const response = await fetch(`${API_BASE_URL}/projects`);
+  return handleResponse<ProjectsResponse>(response);
+}
+
+export async function getProject(videoId: string): Promise<ClipsResponse> {
+  const response = await fetch(`${API_BASE_URL}/projects/${videoId}`);
+  return handleResponse<ClipsResponse>(response);
 }
 
