@@ -7,6 +7,7 @@ import {
   getProject,
   getClipDownloadUrl,
   getClipPlaybackUrl,
+  getClipPlaybackBlobUrl,
   getClipThumbnailUrl,
   saveClip,
   unsaveClip,
@@ -34,12 +35,60 @@ export default function ProjectPage() {
   const [error, setError] = useState<string | null>(null);
   const [savedClips, setSavedClips] = useState<Record<string, boolean>>({});
   const [thumbnailErrors, setThumbnailErrors] = useState<Record<string, boolean>>({});
+  const [thumbnailLoading, setThumbnailLoading] = useState<Record<string, boolean>>({});
+  const [clipVideoUrls, setClipVideoUrls] = useState<Record<string, string>>({});
+  const [clipVideoErrors, setClipVideoErrors] = useState<Record<string, boolean>>({});
+  const [blobUrlsLoading, setBlobUrlsLoading] = useState(false);
+
+  const isUsingNgrok = typeof window !== "undefined" && 
+    (process.env.NEXT_PUBLIC_API_URL?.includes("ngrok") || 
+     window.location.hostname.includes("ngrok"));
 
   useEffect(() => {
     if (videoId) {
       loadProject();
     }
   }, [videoId]);
+
+  // Load blob URLs for ngrok to avoid browser warning and CORS issues
+  useEffect(() => {
+    if (!isUsingNgrok || clips.length === 0) return;
+    
+    const loadBlobUrls = async () => {
+      setBlobUrlsLoading(true);
+      const newUrls: Record<string, string> = {};
+      
+      for (const clip of clips) {
+        if (!clipVideoUrls[clip.id]) {
+          try {
+            const blobUrl = await getClipPlaybackBlobUrl(clip.id);
+            newUrls[clip.id] = blobUrl;
+          } catch (err) {
+            console.error(`Failed to load blob URL for clip ${clip.id}:`, err);
+            setClipVideoErrors(prev => ({ ...prev, [clip.id]: true }));
+          }
+        }
+      }
+      
+      if (Object.keys(newUrls).length > 0) {
+        setClipVideoUrls(prev => ({ ...prev, ...newUrls }));
+      }
+      setBlobUrlsLoading(false);
+    };
+    
+    loadBlobUrls();
+  }, [clips, isUsingNgrok]);
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(clipVideoUrls).forEach((url) => {
+        if (url.startsWith("blob:")) {
+          URL.revokeObjectURL(url);
+        }
+      });
+    };
+  }, [clipVideoUrls]);
 
   const loadProject = async () => {
     try {
@@ -119,20 +168,34 @@ export default function ProjectPage() {
                 <div className="relative aspect-video bg-black">
                   {!thumbnailErrors[clip.id] ? (
                     <>
+                      {thumbnailLoading[clip.id] && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
+                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-zinc-700 border-t-purple-500"></div>
+                        </div>
+                      )}
                       <img
                         src={getClipThumbnailUrl(clip.id)}
                         alt="Clip thumbnail"
                         className="h-full w-full object-cover"
+                        onLoad={() => {
+                          setThumbnailLoading({ ...thumbnailLoading, [clip.id]: false });
+                        }}
+                        onLoadStart={() => {
+                          setThumbnailLoading({ ...thumbnailLoading, [clip.id]: true });
+                        }}
                         onError={() => {
+                          setThumbnailLoading({ ...thumbnailLoading, [clip.id]: false });
                           setThumbnailErrors({ ...thumbnailErrors, [clip.id]: true });
                         }}
                       />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none">
                         <video
-                          src={getClipPlaybackUrl(clip.id)}
+                          key={clipVideoUrls[clip.id] || clip.id}
+                          src={clipVideoUrls[clip.id] || getClipPlaybackUrl(clip.id)}
                           className="h-full w-full object-contain pointer-events-auto"
-                          preload="metadata"
+                          preload={isUsingNgrok && !clipVideoUrls[clip.id] ? "none" : "metadata"}
                           muted
+                          crossOrigin="anonymous"
                           onMouseEnter={(e) => {
                             const video = e.currentTarget;
                             video.play().catch(() => {});
@@ -142,18 +205,73 @@ export default function ProjectPage() {
                             video.pause();
                             video.currentTime = 0;
                           }}
+                          onError={(e) => {
+                            const video = e.currentTarget;
+                            const error = video.error;
+                            console.error(`Video hover preview error for clip ${clip.id}:`, {
+                              code: error?.code,
+                              message: error?.message,
+                              networkState: video.networkState,
+                              readyState: video.readyState,
+                              src: video.src.substring(0, 100),
+                              usingBlob: video.src.startsWith("blob:"),
+                            });
+                          }}
                         />
                       </div>
                     </>
+                  ) : clipVideoErrors[clip.id] && !clipVideoUrls[clip.id] ? (
+                    <div className="w-full aspect-video flex items-center justify-center bg-zinc-800 text-zinc-400">
+                      <div className="text-center">
+                        <p className="text-sm">Failed to load video</p>
+                        <p className="text-xs mt-1">Try refreshing the page</p>
+                      </div>
+                    </div>
+                  ) : isUsingNgrok && !clipVideoUrls[clip.id] && blobUrlsLoading ? (
+                    <div className="w-full aspect-video flex items-center justify-center bg-zinc-800 text-zinc-400">
+                      <div className="text-center">
+                        <div className="h-12 w-12 animate-spin rounded-full border-4 border-zinc-700 border-t-purple-500 mx-auto mb-3"></div>
+                        <p className="text-sm">Loading video...</p>
+                      </div>
+                    </div>
                   ) : (
                     <video
-                      src={getClipPlaybackUrl(clip.id)}
+                      key={clipVideoUrls[clip.id] || clip.id}
+                      src={clipVideoUrls[clip.id] || getClipPlaybackUrl(clip.id)}
                       className="h-full w-full object-contain"
-                      preload="metadata"
+                      preload={isUsingNgrok && !clipVideoUrls[clip.id] ? "none" : "metadata"}
                       playsInline
                       controls
+                      crossOrigin="anonymous"
                       onError={(e) => {
-                        console.error("Video load error:", e);
+                        const video = e.currentTarget;
+                        const error = video.error;
+                        const errorInfo = {
+                          code: error?.code,
+                          message: error?.message,
+                          networkState: video.networkState,
+                          readyState: video.readyState,
+                          src: video.src.substring(0, 100),
+                          usingBlob: video.src.startsWith("blob:"),
+                        };
+                        console.error(`Video load error for clip ${clip.id}:`, errorInfo);
+                        setClipVideoErrors((prev) => ({ ...prev, [clip.id]: true }));
+                        
+                        // Try to reload with blob URL if not already using one
+                        if (!video.src.startsWith("blob:") && isUsingNgrok && !clipVideoUrls[clip.id]) {
+                          getClipPlaybackBlobUrl(clip.id)
+                            .then((blobUrl) => {
+                              setClipVideoUrls((prev) => ({ ...prev, [clip.id]: blobUrl }));
+                              setClipVideoErrors((prev => {
+                                const updated = { ...prev };
+                                delete updated[clip.id];
+                                return updated;
+                              }));
+                            })
+                            .catch((err) => {
+                              console.error(`Failed to load blob URL for clip ${clip.id}:`, err);
+                            });
+                        }
                       }}
                     />
                   )}

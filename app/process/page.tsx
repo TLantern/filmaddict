@@ -12,20 +12,21 @@ import {
   getClipDownloadUrl,
   getClipPlaybackUrl,
   getClipThumbnailUrl,
+  getClipPlaybackBlobUrl,
   submitClipFeedback,
   saveClip,
   unsaveClip,
   triggerLearning,
   getProjects,
   getProject,
-} from "../lib/api";
+} from "../../lib/api";
 import {
   VideoStatus,
   Highlight,
   ClipResponse,
   VideoStatusResponse,
   ProjectResponse,
-} from "../lib/types";
+} from "../../lib/types";
 import { Slider } from "@/components/ui/slider-number-flow";
 import { Button } from "@/components/ui/button-1";
 import { Input } from "@/components/ui/input";
@@ -94,7 +95,15 @@ export default function Home() {
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectThumbnails, setProjectThumbnails] = useState<Record<string, string | null>>({});
+  const [clipVideoUrls, setClipVideoUrls] = useState<Record<string, string>>({});
+  const [clipVideoErrors, setClipVideoErrors] = useState<Record<string, boolean>>({});
+  const [blobUrlsLoading, setBlobUrlsLoading] = useState(false);
   const clipsPollingStarted = useRef(false);
+  const loadedClipIds = useRef<Set<string>>(new Set());
+  
+  const isUsingNgrok = typeof window !== "undefined" && 
+    (process.env.NEXT_PUBLIC_API_URL?.includes("ngrok") || 
+     window.location.hostname.includes("ngrok"));
 
   useEffect(() => {
     loadProjects();
@@ -271,6 +280,50 @@ export default function Home() {
       clipsPollingStarted.current = false;
     };
   }, [videoId]);
+
+  useEffect(() => {
+    if (!isUsingNgrok || clips.length === 0) return;
+    
+    const loadBlobUrls = async () => {
+      setBlobUrlsLoading(true);
+      const newUrls: Record<string, string> = {};
+      const errors: Record<string, boolean> = {};
+      
+      for (const clip of clips) {
+        if (!loadedClipIds.current.has(clip.id)) {
+          loadedClipIds.current.add(clip.id);
+          try {
+            const blobUrl = await getClipPlaybackBlobUrl(clip.id);
+            newUrls[clip.id] = blobUrl;
+          } catch (err) {
+            console.error(`Failed to load blob URL for clip ${clip.id}:`, err);
+            errors[clip.id] = true;
+            loadedClipIds.current.delete(clip.id);
+          }
+        }
+      }
+      
+      if (Object.keys(newUrls).length > 0) {
+        setClipVideoUrls((prev) => ({ ...prev, ...newUrls }));
+      }
+      if (Object.keys(errors).length > 0) {
+        setClipVideoErrors((prev) => ({ ...prev, ...errors }));
+      }
+      setBlobUrlsLoading(false);
+    };
+    
+    loadBlobUrls();
+  }, [clips, isUsingNgrok]);
+  
+  useEffect(() => {
+    return () => {
+      Object.values(clipVideoUrls).forEach((url) => {
+        if (url.startsWith("blob:")) {
+          URL.revokeObjectURL(url);
+        }
+      });
+    };
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -543,12 +596,57 @@ export default function Home() {
           </Alert>
         )}
 
+        {videoId && status && (
+          (status.status !== VideoStatus.DONE && status.status !== VideoStatus.FAILED) ||
+          (status.status === VideoStatus.DONE && highlights.length > 0 && clips.length < highlights.length)
+        ) && (
+          <Card className="mb-8 border-2 border-zinc-700 bg-zinc-900/80 backdrop-blur-sm">
+            <CardContent className="pt-6">
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <div className="relative">
+                  <div className="h-16 w-16 animate-spin rounded-full border-4 border-zinc-700 border-t-purple-500"></div>
+                </div>
+                <div className="text-center">
+                  <h3 className="text-xl font-semibold text-white mb-2">
+                    {getStatusMessage(status.status)}
+                  </h3>
+                  {status.duration && (
+                    <p className="text-sm text-zinc-400">
+                      Video duration: {formatTime(status.duration)}
+                    </p>
+                  )}
+                  {status.status === VideoStatus.HIGHLIGHTS_FOUND && highlights.length > 0 && (
+                    <p className="text-sm text-zinc-300 mt-2">
+                      {clips.length > 0 
+                        ? `Generating clips... (${clips.length}/${highlights.length} ready)`
+                        : `Found ${highlights.length} highlights. Generating clips...`}
+                    </p>
+                  )}
+                  {status.status === VideoStatus.DONE && highlights.length > 0 && clips.length < highlights.length && (
+                    <p className="text-sm text-zinc-300 mt-2">
+                      Finalizing clips... ({clips.length}/{highlights.length} ready)
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {highlights.length > 0 && (
           <div className="space-y-4" data-highlights-section>
-            <h2 className="text-2xl font-bold text-white">Top {highlights.length} Clips</h2>
+            <h2 className="text-2xl font-bold text-white">
+              Top {highlights.length} Clips
+              {status?.status === VideoStatus.HIGHLIGHTS_FOUND && clips.length < highlights.length && (
+                <span className="ml-3 text-sm font-normal text-zinc-400">
+                  ({clips.length}/{highlights.length} clips ready)
+                </span>
+              )}
+            </h2>
             <div className="space-y-6">
               {highlights.map((highlight, index) => {
                 const clip = getClipForHighlight(highlight);
+                const isProcessing = !clip && status?.status === VideoStatus.HIGHLIGHTS_FOUND;
                 return (
                   <Card key={index} className="border-2 border-zinc-700 hover:border-zinc-500 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-500/20 hover:scale-[1.02] bg-zinc-900/80 backdrop-blur-sm">
                     <CardContent className="pt-6">
@@ -563,19 +661,74 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
+                    {isProcessing && (
+                      <div className="mt-4 flex flex-col items-center justify-center py-12 bg-zinc-800/50 rounded-lg">
+                        <div className="relative">
+                          <div className="h-12 w-12 animate-spin rounded-full border-4 border-zinc-700 border-t-purple-500"></div>
+                        </div>
+                        <p className="mt-4 text-sm text-zinc-400">Processing clip...</p>
+                      </div>
+                    )}
                     {clip && (
                       <div className="mt-4 space-y-4">
                         <div className="flex justify-center">
-                          <div className="rounded-lg overflow-hidden bg-black max-w-2xl w-full">
-                            <video
-                              src={getClipPlaybackUrl(clip.id)}
-                              controls
-                              className="w-full h-auto"
-                              preload="metadata"
-                              poster={getClipThumbnailUrl(clip.id)}
-                            >
-                              Your browser does not support the video tag.
-                            </video>
+                          <div className="rounded-lg overflow-hidden bg-black max-w-2xl w-full relative">
+                            {clipVideoErrors[clip.id] && !clipVideoUrls[clip.id] ? (
+                              <div className="w-full aspect-video flex items-center justify-center bg-zinc-800 text-zinc-400">
+                                <div className="text-center">
+                                  <p className="text-sm">Failed to load video</p>
+                                  <p className="text-xs mt-1">Try refreshing the page</p>
+                                </div>
+                              </div>
+                            ) : isUsingNgrok && !clipVideoUrls[clip.id] && blobUrlsLoading ? (
+                              <div className="w-full aspect-video flex items-center justify-center bg-zinc-800 text-zinc-400">
+                                <div className="text-center">
+                                  <div className="h-12 w-12 animate-spin rounded-full border-4 border-zinc-700 border-t-purple-500 mx-auto mb-3"></div>
+                                  <p className="text-sm">Loading video...</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <video
+                                key={clipVideoUrls[clip.id] || clip.id}
+                                src={clipVideoUrls[clip.id] || getClipPlaybackUrl(clip.id)}
+                                controls
+                                className="w-full h-auto"
+                                preload={isUsingNgrok && !clipVideoUrls[clip.id] ? "none" : "metadata"}
+                                poster={getClipThumbnailUrl(clip.id)}
+                                crossOrigin="anonymous"
+                                onError={(e) => {
+                                  const video = e.currentTarget;
+                                  const error = video.error;
+                                  const errorInfo = {
+                                    code: error?.code,
+                                    message: error?.message,
+                                    networkState: video.networkState,
+                                    readyState: video.readyState,
+                                    src: video.src.substring(0, 100),
+                                    usingBlob: video.src.startsWith("blob:"),
+                                  };
+                                  console.error(`Video load error for clip: ${clip.id}`, JSON.stringify(errorInfo, null, 2));
+                                  setClipVideoErrors((prev) => ({ ...prev, [clip.id]: true }));
+                                  // Try to reload with blob URL if not already using one
+                                  if (!video.src.startsWith("blob:") && isUsingNgrok && !clipVideoUrls[clip.id]) {
+                                    getClipPlaybackBlobUrl(clip.id)
+                                      .then((blobUrl) => {
+                                        setClipVideoUrls((prev) => ({ ...prev, [clip.id]: blobUrl }));
+                                        setClipVideoErrors((prev => {
+                                          const updated = { ...prev };
+                                          delete updated[clip.id];
+                                          return updated;
+                                        }));
+                                      })
+                                      .catch((err) => {
+                                        console.error(`Failed to load blob URL for clip ${clip.id}:`, err);
+                                      });
+                                  }
+                                }}
+                              >
+                                Your browser does not support the video tag.
+                              </video>
+                            )}
                           </div>
                         </div>
                         <div className="space-y-4">

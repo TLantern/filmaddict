@@ -70,6 +70,9 @@ export default function LandingPage() {
       }
     } catch (err) {
       console.error("Failed to load projects:", err);
+      // Silently fail - projects are optional
+      // Set empty projects array to prevent UI errors
+      setProjects([]);
     } finally {
       setProjectsLoading(false);
     }

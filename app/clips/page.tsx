@@ -33,6 +33,7 @@ export default function ClipsPage() {
   const [savedClips, setSavedClips] = useState<Record<string, boolean>>({});
   const [clearing, setClearing] = useState(false);
   const [thumbnailErrors, setThumbnailErrors] = useState<Record<string, boolean>>({});
+  const [thumbnailLoading, setThumbnailLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadClips();
@@ -144,11 +145,23 @@ export default function ClipsPage() {
                 <div className="relative aspect-video bg-black">
                   {!thumbnailErrors[clip.id] ? (
                     <>
+                      {thumbnailLoading[clip.id] && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
+                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-zinc-700 border-t-purple-500"></div>
+                        </div>
+                      )}
                       <img
                         src={getClipThumbnailUrl(clip.id)}
                         alt="Clip thumbnail"
                         className="h-full w-full object-cover"
+                        onLoad={() => {
+                          setThumbnailLoading({ ...thumbnailLoading, [clip.id]: false });
+                        }}
+                        onLoadStart={() => {
+                          setThumbnailLoading({ ...thumbnailLoading, [clip.id]: true });
+                        }}
                         onError={() => {
+                          setThumbnailLoading({ ...thumbnailLoading, [clip.id]: false });
                           setThumbnailErrors({ ...thumbnailErrors, [clip.id]: true });
                         }}
                       />
@@ -178,7 +191,15 @@ export default function ClipsPage() {
                       playsInline
                       controls
                       onError={(e) => {
-                        console.error("Video load error:", e);
+                        const video = e.currentTarget;
+                        const error = video.error;
+                        console.error(`Video load error for clip ${clip.id}:`, {
+                          code: error?.code,
+                          message: error?.message,
+                          networkState: video.networkState,
+                          readyState: video.readyState,
+                          src: video.src.substring(0, 100),
+                        });
                       }}
                     />
                   )}
