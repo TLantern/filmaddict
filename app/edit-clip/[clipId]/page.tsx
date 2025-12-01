@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, use } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { getClipDetail, editClip } from "../../../lib/api";
@@ -183,7 +183,7 @@ function Timeline({
 }
 
 export default function EditClipPage() {
-  const params = use(useParams());
+  const params = useParams();
   const router = useRouter();
   const clipId = params.clipId as string;
   
