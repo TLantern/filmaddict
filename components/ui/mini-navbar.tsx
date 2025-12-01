@@ -51,7 +51,7 @@ export function Navbar() {
   const logoElement = (
     <Link href="/" className="flex items-center gap-2">
       <Film className="w-5 h-5 text-gray-200" />
-      <span className="text-sm font-semibold text-gray-200 hidden sm:inline">FilmAddict</span>
+      <span className="text-sm font-semibold text-gray-200 hidden sm:inline">YKlipp</span>
     </Link>
   );
 

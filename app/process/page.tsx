@@ -485,7 +485,7 @@ function ProcessPageContent() {
       <main className="relative z-10 w-full max-w-4xl">
         <div className="mb-8 flex flex-col items-center gap-6">
           <h1 className="text-4xl font-bold text-white text-center">
-            FilmAddict
+            YKlipp
           </h1>
           <Breadcrumb>
             <BreadcrumbList className="text-zinc-300">

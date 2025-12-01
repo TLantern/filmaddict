@@ -154,7 +154,7 @@ export default function LandingPage() {
     <>
       <Navbar />
       <HeroGeometric
-        badge="FilmAddict"
+        badge="YKlipp"
         title1="Best Moments"
         title2="Auto-Extracted"
       >

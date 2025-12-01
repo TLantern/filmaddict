@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FilmAddict - Highlight Extractor",
+  title: "YKlipp - Highlight Extractor",
   description: "Extract the best moments from your videos automatically",
 };
 
