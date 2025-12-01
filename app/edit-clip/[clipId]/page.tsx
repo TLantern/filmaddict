@@ -30,7 +30,7 @@ function formatTimeShort(seconds: number): string {
 }
 
 interface TimelineProps {
-  videoRef: React.RefObject<HTMLVideoElement>;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
   videoDuration: number;
   startTime: number;
   endTime: number;
