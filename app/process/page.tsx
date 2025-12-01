@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -70,7 +70,7 @@ function getStatusMessage(status: VideoStatus): string {
   return messages[status] || "Unknown status";
 }
 
-export default function Home() {
+function ProcessPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [uploadMethod, setUploadMethod] = useState<UploadMethod>(null);
@@ -918,5 +918,13 @@ export default function Home() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function ProcessPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-black"><div className="h-8 w-8 animate-spin rounded-full border-4 border-zinc-700 border-t-white"></div></div>}>
+      <ProcessPageContent />
+    </Suspense>
   );
 }
