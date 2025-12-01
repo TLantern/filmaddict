@@ -14,10 +14,13 @@ import {
 // Use environment variable for API URL
 // When using ngrok, set NEXT_PUBLIC_API_URL to your backend ngrok URL
 // Example: NEXT_PUBLIC_API_URL=https://abc123.ngrok-free.app
-if (!process.env.NEXT_PUBLIC_API_URL) {
-  throw new Error("NEXT_PUBLIC_API_URL environment variable is required");
+function getApiBaseUrl(): string {
+  const url = process.env.NEXT_PUBLIC_API_URL;
+  if (!url) {
+    throw new Error("NEXT_PUBLIC_API_URL environment variable is required");
+  }
+  return url;
 }
-const API_BASE_URL: string = process.env.NEXT_PUBLIC_API_URL;
 
 // Helper to add ngrok bypass header if using ngrok
 function getHeaders(additionalHeaders?: Record<string, string>): Record<string, string> {
@@ -26,7 +29,7 @@ function getHeaders(additionalHeaders?: Record<string, string>): Record<string, 
   };
   
   // Add ngrok-skip-browser-warning header when using ngrok
-  if (API_BASE_URL.includes("ngrok")) {
+  if (getApiBaseUrl().includes("ngrok")) {
     headers["ngrok-skip-browser-warning"] = "true";
   }
   
@@ -47,8 +50,8 @@ async function fetchWithErrorHandling(url: string, options?: RequestInit): Promi
     return response;
   } catch (error) {
     if (error instanceof TypeError && error.message === "Failed to fetch") {
-      const isNgrok = API_BASE_URL.includes("ngrok");
-      const baseUrl = isNgrok ? "ngrok backend" : API_BASE_URL;
+      const isNgrok = getApiBaseUrl().includes("ngrok");
+      const baseUrl = isNgrok ? "ngrok backend" : getApiBaseUrl();
       throw new Error(`Network error: Unable to connect to ${baseUrl}. Make sure the backend is running and accessible.`);
     }
     throw error;
@@ -59,7 +62,7 @@ export async function uploadVideo(file: File): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/videos/upload`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/upload`, {
     method: "POST",
     headers: getHeaders(),
     body: formData,
@@ -69,7 +72,7 @@ export async function uploadVideo(file: File): Promise<UploadResponse> {
 }
 
 export async function uploadYouTubeVideo(youtubeUrl: string): Promise<UploadResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/videos/youtube`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/youtube`, {
     method: "POST",
     headers: getHeaders({
       "Content-Type": "application/json",
@@ -81,37 +84,37 @@ export async function uploadYouTubeVideo(youtubeUrl: string): Promise<UploadResp
 }
 
 export async function getVideoStatus(videoId: string): Promise<VideoStatusResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/videos/${videoId}/status`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/status`, {
     headers: getHeaders(),
   });
   return handleResponse<VideoStatusResponse>(response);
 }
 
 export async function getHighlights(videoId: string): Promise<HighlightsResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/videos/${videoId}/highlights`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/highlights`, {
     headers: getHeaders(),
   });
   return handleResponse<HighlightsResponse>(response);
 }
 
 export async function getClips(videoId: string): Promise<ClipsResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/videos/${videoId}/clips`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/clips`, {
     headers: getHeaders(),
   });
   return handleResponse<ClipsResponse>(response);
 }
 
 export function getClipDownloadUrl(clipId: string): string {
-  return `${API_BASE_URL}/clips/${clipId}/download`;
+  return `${getApiBaseUrl()}/clips/${clipId}/download`;
 }
 
 export function getClipPlaybackUrl(clipId: string): string {
-  return `${API_BASE_URL}/clips/${clipId}/download`;
+  return `${getApiBaseUrl()}/clips/${clipId}/download`;
 }
 
 export async function getClipPlaybackUrlDirect(clipId: string): Promise<string> {
   // Fetch the redirect URL to get the actual S3 presigned URL
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/clips/${clipId}/download`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/clips/${clipId}/download`, {
     method: "HEAD",
     headers: getHeaders(),
     redirect: "follow",
@@ -154,7 +157,7 @@ export async function getClipPlaybackBlobUrl(clipId: string): Promise<string> {
 }
 
 export function getClipThumbnailUrl(clipId: string): string {
-  return `${API_BASE_URL}/clips/${clipId}/thumbnail`;
+  return `${getApiBaseUrl()}/clips/${clipId}/thumbnail`;
 }
 
 export async function submitClipFeedback(
@@ -162,7 +165,7 @@ export async function submitClipFeedback(
   rating: number,
   textFeedback?: string
 ): Promise<ClipFeedbackResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/clips/${clipId}/feedback`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/clips/${clipId}/feedback`, {
     method: "POST",
     headers: getHeaders({
       "Content-Type": "application/json",
@@ -176,7 +179,7 @@ export async function submitClipFeedback(
 }
 
 export async function saveClip(clipId: string): Promise<SavedClipResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/clips/${clipId}/save`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/clips/${clipId}/save`, {
     method: "POST",
     headers: getHeaders(),
   });
@@ -184,7 +187,7 @@ export async function saveClip(clipId: string): Promise<SavedClipResponse> {
 }
 
 export async function unsaveClip(clipId: string): Promise<{ status: string }> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/clips/${clipId}/save`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/clips/${clipId}/save`, {
     method: "DELETE",
     headers: getHeaders(),
   });
@@ -197,7 +200,7 @@ export async function triggerLearning(): Promise<{
   prompt_evaluated: boolean;
   prompt_promoted: boolean;
 }> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/admin/learning/run`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/admin/learning/run`, {
     method: "POST",
     headers: getHeaders(),
   });
@@ -210,21 +213,21 @@ export async function triggerLearning(): Promise<{
 }
 
 export async function getAllClips(): Promise<ClipsResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/clips`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/clips`, {
     headers: getHeaders(),
   });
   return handleResponse<ClipsResponse>(response);
 }
 
 export async function getSavedClips(): Promise<ClipResponse[]> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/clips/saved`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/clips/saved`, {
     headers: getHeaders(),
   });
   return handleResponse<ClipResponse[]>(response);
 }
 
 export async function deleteAllClips(): Promise<{ status: string; count: number }> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/clips`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/clips`, {
     method: "DELETE",
     headers: getHeaders(),
   });
@@ -232,7 +235,7 @@ export async function deleteAllClips(): Promise<{ status: string; count: number 
 }
 
 export async function getClipDetail(clipId: string): Promise<ClipDetailResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/clips/${clipId}`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/clips/${clipId}`, {
     headers: getHeaders(),
   });
   return handleResponse<ClipDetailResponse>(response);
@@ -243,7 +246,7 @@ export async function editClip(
   newStart: number,
   newEnd: number
 ): Promise<ClipResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/clips/${clipId}/edit`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/clips/${clipId}/edit`, {
     method: "POST",
     headers: getHeaders({
       "Content-Type": "application/json",
@@ -257,14 +260,14 @@ export async function editClip(
 }
 
 export async function getProjects(): Promise<ProjectsResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/projects`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/projects`, {
     headers: getHeaders(),
   });
   return handleResponse<ProjectsResponse>(response);
 }
 
 export async function getProject(videoId: string): Promise<ClipsResponse> {
-  const response = await fetchWithErrorHandling(`${API_BASE_URL}/projects/${videoId}`, {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/projects/${videoId}`, {
     headers: getHeaders(),
   });
   return handleResponse<ClipsResponse>(response);
