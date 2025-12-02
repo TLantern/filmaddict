@@ -1,0 +1,18 @@
+   cd backend
+   python3 main.py
+
+   cd main/filmaddict
+   npm run dev
+
+   # Note: Video processing worker runs automatically in the FastAPI app
+   # No separate worker process needed!
+
+./start-ngrok-both.sh
+./get-ngrok-backend-url.sh
+./start-ngrok-backend.sh   # For backend (port 8000)
+# or
+./start-ngrok-frontend.sh   # For frontend (port 3000)
+
+   version_name": "v2",
+
+   ./update-ngrok-domain.sh https://83468c3ac12c.ngrok-free.app
