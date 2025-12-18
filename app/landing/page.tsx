@@ -3,14 +3,15 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Upload, Youtube, Loader2 } from "lucide-react";
+import { Upload, Youtube, Loader2, Sparkles, Zap, Video, Brain, Scissors } from "lucide-react";
 import { HeroGeometric } from "@/components/ui/shape-landing-hero";
 import { Button } from "@/components/ui/button-1";
+import CleanupButton from "@/components/ui/cleanup-button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Navbar } from "@/components/ui/mini-navbar";
-import { uploadVideo, uploadYouTubeVideo, getProjects, getClips, getClipThumbnailUrl } from "@/lib/api";
+import { uploadVideo, uploadYouTubeVideo, getProjects, getMoments, getMomentThumbnailUrl } from "@/lib/api";
 import { ProjectResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -50,11 +51,11 @@ export default function LandingPage() {
       setProjects(projectsData.projects);
 
       for (const project of projectsData.projects) {
-        if (project.clip_count > 0) {
+        if (project.moment_count > 0) {
           try {
-            const clips = await getClips(project.video_id);
-            if (clips.clips.length > 0) {
-              const thumbnailUrl = getClipThumbnailUrl(clips.clips[0].id);
+            const clips = await getMoments(project.video_id);
+            if (clips.moments.length > 0) {
+              const thumbnailUrl = getMomentThumbnailUrl(clips.moments[0].id);
               setProjectThumbnails((prev) => ({
                 ...prev,
                 [project.video_id]: thumbnailUrl,
@@ -152,8 +153,9 @@ export default function LandingPage() {
       <Navbar />
       <HeroGeometric
         badge="YKlipp"
-        title1="Best Moments"
-        title2="Auto-Extracted"
+        title1="Cut long-form editing"
+        title2="time by 50%"
+        subtitle="For long-form videos before you open Premiere or Adobe"
       >
         <Card className="bg-white/5 backdrop-blur-md border-white/10 mb-12">
           <CardContent className="p-8">
@@ -182,10 +184,7 @@ export default function LandingPage() {
                 <p className="text-white/80 text-lg font-medium mb-2">
                   {selectedFile
                     ? selectedFile.name
-                    : "Drop your video here or click to browse"}
-                </p>
-                <p className="text-white/50 text-sm">
-                  Supports MP4, MOV, MKV and other video formats
+                    : "Drop your video here"}
                 </p>
               </div>
 
@@ -209,7 +208,7 @@ export default function LandingPage() {
                       setUploadMethod("youtube");
                       setError(null);
                     }}
-                    placeholder="https://www.youtube.com/watch?v=..."
+                    placeholder="Drop your YouTube URL here"
                     className="pl-10 bg-white/5 border-white/20 text-white placeholder:text-white/40 focus-visible:ring-indigo-400"
                   />
                 </div>
@@ -221,26 +220,113 @@ export default function LandingPage() {
                 </Alert>
               )}
 
-              <Button
+              <CleanupButton
                 type="submit"
                 disabled={loading || (!selectedFile && !youtubeUrl)}
-                className="w-full bg-gradient-to-r from-indigo-500 to-rose-500 hover:from-indigo-600 hover:to-rose-600 text-white border-0 h-12 text-lg font-semibold"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Get Started"
-                )}
-              </Button>
+                loading={loading}
+                active={!!(selectedFile || youtubeUrl)}
+              />
             </form>
           </CardContent>
         </Card>
 
+        <div className="w-full max-w-6xl mx-auto mb-16">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-bold text-white mb-4">
+              Identify Your Best Moments
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 to-rose-300"> Before You Edit</span>
+            </h2>
+            <p className="text-white/70 text-lg max-w-2xl mx-auto">
+              Enable long-form creators and editors to identify the most valuable moments, structure, and cut points in a video before editing begins, so time is spent editing, not scrubbing.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+            <Card className="bg-white/5 backdrop-blur-md border-white/10 hover:border-indigo-400/50 transition-all">
+              <CardContent className="p-6 text-center">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-indigo-500/20 mb-4">
+                  <Brain className="h-6 w-6 text-indigo-300" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">AI-Powered Analysis</h3>
+                <p className="text-white/60 text-sm">
+                  Advanced AI identifies the most engaging, emotionally intense, and information-dense moments in your videos.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white/5 backdrop-blur-md border-white/10 hover:border-indigo-400/50 transition-all">
+              <CardContent className="p-6 text-center">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-rose-500/20 mb-4">
+                  <Video className="h-6 w-6 text-rose-300" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">Auto Transcription</h3>
+                <p className="text-white/60 text-sm">
+                  Automatically transcribe your videos with precise timestamps for every spoken word and segment.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white/5 backdrop-blur-md border-white/10 hover:border-indigo-400/50 transition-all">
+              <CardContent className="p-6 text-center">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-violet-500/20 mb-4">
+                  <Scissors className="h-6 w-6 text-violet-300" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">Identified Cut Points</h3>
+                <p className="text-white/60 text-sm">
+                  Get precise timestamps and markers for the best moments to cut and edit in your NLE.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white/5 backdrop-blur-md border-white/10 hover:border-indigo-400/50 transition-all">
+              <CardContent className="p-6 text-center">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-cyan-500/20 mb-4">
+                  <Zap className="h-6 w-6 text-cyan-300" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">Lightning Fast</h3>
+                <p className="text-white/60 text-sm">
+                  Process videos quickly with our optimized pipeline that handles transcription and analysis in parallel.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="bg-white/5 backdrop-blur-md border-white/10">
+            <CardContent className="p-8">
+              <div className="flex items-start gap-4 mb-6">
+                <div className="flex-shrink-0">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-r from-indigo-500/20 to-rose-500/20">
+                    <Sparkles className="h-6 w-6 text-indigo-300" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-2xl font-bold text-white mb-3">How It Works</h3>
+                  <div className="space-y-4 text-white/70">
+                    <div className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500/30 text-indigo-300 text-sm font-semibold flex items-center justify-center">1</span>
+                      <p><span className="font-semibold text-white">Upload</span> your video file or paste a YouTube URL. We support all major video formats including MP4, MOV, and MKV.</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500/30 text-indigo-300 text-sm font-semibold flex items-center justify-center">2</span>
+                      <p><span className="font-semibold text-white">Transcribe</span> audio is automatically extracted and transcribed with precise timestamps using advanced speech recognition.</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500/30 text-indigo-300 text-sm font-semibold flex items-center justify-center">3</span>
+                      <p><span className="font-semibold text-white">Analyze</span> AI reviews your transcript to identify the top 5-10 most engaging moments based on emotional intensity, information density, and engagement potential.</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500/30 text-indigo-300 text-sm font-semibold flex items-center justify-center">4</span>
+                      <p><span className="font-semibold text-white">Edit</span> take the identified timestamps and cut points into Premiere, Final Cut, or your preferred NLE to start editing the best parts immediately.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         <div className="w-full max-w-4xl mx-auto">
-          <h2 className="mb-6 text-3xl font-bold text-white">Your Projects</h2>
+          <h2 className="mb-6 text-3xl font-bold text-white">Your Videos</h2>
           {projectsLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-white/60" />
@@ -277,7 +363,7 @@ export default function LandingPage() {
                         <div className="font-mono text-xs truncate">
                           {project.video_id}
                         </div>
-                        <div>{project.clip_count} clip{project.clip_count !== 1 ? "s" : ""}</div>
+                        <div>{project.moment_count} moment{project.moment_count !== 1 ? "s" : ""}</div>
                         {project.duration && (
                           <div>Duration: {formatTime(project.duration)}</div>
                         )}

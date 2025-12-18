@@ -8,14 +8,14 @@ import {
   uploadYouTubeVideo,
   getVideoStatus,
   getHighlights,
-  getClips,
-  getClipDownloadUrl,
-  getClipPlaybackUrl,
-  getClipThumbnailUrl,
-  getClipPlaybackBlobUrl,
-  submitClipFeedback,
-  saveClip,
-  unsaveClip,
+  getMoments,
+  getMomentDownloadUrl,
+  getMomentPlaybackUrl,
+  getMomentThumbnailUrl,
+  getMomentPlaybackBlobUrl,
+  submitMomentFeedback,
+  saveMoment,
+  unsaveMoment,
   triggerLearning,
   getProjects,
   getProject,
@@ -23,7 +23,7 @@ import {
 import {
   VideoStatus,
   Highlight,
-  ClipResponse,
+  MomentResponse,
   VideoStatusResponse,
   ProjectResponse,
 } from "../../lib/types";
@@ -79,7 +79,7 @@ function ProcessPageContent() {
   const [videoId, setVideoId] = useState<string | null>(null);
   const [status, setStatus] = useState<VideoStatusResponse | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
-  const [clips, setClips] = useState<ClipResponse[]>([]);
+  const [clips, setClips] = useState<MomentResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -123,10 +123,10 @@ function ProcessPageContent() {
       const thumbnailPromises = data.projects.map(async (project) => {
         try {
           const clipsData = await getProject(project.video_id);
-          if (clipsData.clips && clipsData.clips.length > 0) {
-            const firstClip = clipsData.clips[0];
+          if (clipsData.moments && clipsData.moments.length > 0) {
+            const firstClip = clipsData.moments[0];
             // Always try to get thumbnail URL - backend will generate on-demand if needed
-            const thumbnailUrl = getClipThumbnailUrl(firstClip.id);
+            const thumbnailUrl = getMomentThumbnailUrl(firstClip.id);
             return { videoId: project.video_id, thumbnailUrl };
           }
           return { videoId: project.video_id, thumbnailUrl: null };
@@ -163,11 +163,11 @@ function ProcessPageContent() {
       setVideoId(projectVideoId);
       const [highlightsData, clipsData, statusData] = await Promise.all([
         getHighlights(projectVideoId),
-        getClips(projectVideoId),
+        getMoments(projectVideoId),
         getVideoStatus(projectVideoId),
       ]);
       setHighlights(highlightsData.highlights);
-      setClips(clipsData.clips);
+      setClips(clipsData.moments);
       setStatus(statusData);
       // Scroll to highlights section
       setTimeout(() => {
@@ -192,16 +192,37 @@ function ProcessPageContent() {
 
     const pollStatus = async () => {
       try {
+        console.log(`[Process] Polling status for video ${videoId}...`);
         const statusData = await getVideoStatus(videoId!);
+        console.log(`[Process] Status received:`, {
+          video_id: statusData.video_id,
+          status: statusData.status,
+          duration: statusData.duration,
+          created_at: statusData.created_at
+        });
         setStatus(statusData);
 
         if (statusData.status === VideoStatus.DONE) {
-          const [highlightsData, clipsData] = await Promise.all([
-            getHighlights(videoId!),
-            getClips(videoId!),
-          ]);
+          console.log(`[Process] Video ${videoId} is DONE, fetching highlights...`);
+          const highlightsData = await getHighlights(videoId!);
+          console.log(`[Process] Highlights received:`, {
+            count: highlightsData.highlights.length,
+            highlights: highlightsData.highlights.map(h => ({ start: h.start, end: h.end, score: h.score }))
+          });
           setHighlights(highlightsData.highlights);
-          setClips(clipsData.clips);
+          
+          // Try to fetch moments (they may not exist if moment generation is disabled)
+          try {
+            const clipsData = await getMoments(videoId!);
+            console.log(`[Process] Clips received:`, {
+              count: clipsData.moments.length,
+              clips: clipsData.moments.map(c => ({ id: c.id, start: c.start, end: c.end }))
+            });
+            setClips(clipsData.moments);
+          } catch (err) {
+            console.log(`[Process] Moments not available (moment generation may be disabled)`);
+            setClips([]);
+          }
           // Reload projects after a short delay to ensure backend has saved clips
           setTimeout(() => {
             loadProjects();
@@ -215,6 +236,11 @@ function ProcessPageContent() {
             clipsIntervalId = null;
           }
           clipsPollingStarted.current = false;
+          
+          // Redirect to timeline editor after a brief delay to ensure data is ready
+          setTimeout(() => {
+            router.push(`/timeline/${videoId}`);
+          }, 500);
         } else if (statusData.status === VideoStatus.FAILED) {
           setError("Video processing failed. Please try again.");
           if (intervalId) {
@@ -240,22 +266,9 @@ function ProcessPageContent() {
             console.error("Failed to fetch highlights:", err);
           });
           
-          // Poll for clips to track clipping progress
-          if (!clipsPollingStarted.current) {
-            clipsPollingStarted.current = true;
-            const pollClips = async () => {
-              try {
-                const clipsData = await getClips(videoId!);
-                setClips(clipsData.clips);
-              } catch (err) {
-                // Silently fail - clips might not be ready yet
-                console.error("Failed to fetch clips:", err);
-              }
-            };
-            
-            pollClips();
-            clipsIntervalId = setInterval(pollClips, 4000);
-          }
+          // Note: Moment generation is currently disabled in the backend
+          // Moments are virtual references based on highlights
+          // Skip polling for clips since they won't be generated
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to check status");
@@ -293,7 +306,7 @@ function ProcessPageContent() {
         if (!loadedClipIds.current.has(clip.id)) {
           loadedClipIds.current.add(clip.id);
           try {
-            const blobUrl = await getClipPlaybackBlobUrl(clip.id);
+            const blobUrl = await getMomentPlaybackBlobUrl(clip.id);
             newUrls[clip.id] = blobUrl;
           } catch (err) {
             console.error(`Failed to load blob URL for clip ${clip.id}:`, err);
@@ -366,7 +379,7 @@ function ProcessPageContent() {
     }
   };
 
-  const getClipForHighlight = (highlight: Highlight): ClipResponse | undefined => {
+  const getClipForHighlight = (highlight: Highlight): MomentResponse | undefined => {
     return clips.find(
       (clip) => Math.abs(clip.start - highlight.start) < 0.5 && Math.abs(clip.end - highlight.end) < 0.5
     );
@@ -378,7 +391,7 @@ function ProcessPageContent() {
       const rating = clipRatings[clipId] || 50;
       const textFeedback = clipTextFeedback[clipId];
       
-      await submitClipFeedback(clipId, rating, textFeedback);
+      await submitMomentFeedback(clipId, rating, textFeedback);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit feedback");
@@ -390,10 +403,10 @@ function ProcessPageContent() {
   const handleSaveClip = async (clipId: string) => {
     try {
       if (savedClips[clipId]) {
-        await unsaveClip(clipId);
+        await unsaveMoment(clipId);
         setSavedClips({ ...savedClips, [clipId]: false });
       } else {
-        await saveClip(clipId);
+        await saveMoment(clipId);
         setSavedClips({ ...savedClips, [clipId]: true });
       }
       setError(null);
@@ -509,7 +522,7 @@ function ProcessPageContent() {
               </BreadcrumbSeparator>
               <BreadcrumbItem>
                 <BreadcrumbLink asChild>
-                  <Link href="/clips">All Clips</Link>
+                  <Link href="/moments">Videos</Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator>
@@ -655,7 +668,8 @@ function ProcessPageContent() {
                         <div className="mb-2 text-sm font-medium text-zinc-400">
                           {formatTime(highlight.start)} - {formatTime(highlight.end)}
                         </div>
-                        <p className="text-zinc-100">{highlight.reason}</p>
+                        {highlight.title && <h4 className="text-zinc-100 font-semibold mb-1">{highlight.title}</h4>}
+                        {highlight.summary && <p className="text-zinc-300 text-sm">{highlight.summary}</p>}
                         <div className="mt-2 text-sm text-zinc-400">
                           Score: {highlight.score.toFixed(1)}/10
                         </div>
@@ -690,11 +704,11 @@ function ProcessPageContent() {
                             ) : (
                               <video
                                 key={clipVideoUrls[clip.id] || clip.id}
-                                src={clipVideoUrls[clip.id] || getClipPlaybackUrl(clip.id)}
+                                src={clipVideoUrls[clip.id] || getMomentPlaybackUrl(clip.id)}
                                 controls
                                 className="w-full h-auto"
                                 preload={isUsingNgrok && !clipVideoUrls[clip.id] ? "none" : "metadata"}
-                                poster={getClipThumbnailUrl(clip.id)}
+                                poster={getMomentThumbnailUrl(clip.id)}
                                 crossOrigin="anonymous"
                                 onError={(e) => {
                                   const video = e.currentTarget;
@@ -711,7 +725,7 @@ function ProcessPageContent() {
                                   setClipVideoErrors((prev) => ({ ...prev, [clip.id]: true }));
                                   // Try to reload with blob URL if not already using one
                                   if (!video.src.startsWith("blob:") && isUsingNgrok && !clipVideoUrls[clip.id]) {
-                                    getClipPlaybackBlobUrl(clip.id)
+                                    getMomentPlaybackBlobUrl(clip.id)
                                       .then((blobUrl) => {
                                         setClipVideoUrls((prev) => ({ ...prev, [clip.id]: blobUrl }));
                                         setClipVideoErrors((prev => {
@@ -735,7 +749,7 @@ function ProcessPageContent() {
                           <div className="flex items-center gap-3">
                             <div className="flex gap-3 flex-1">
                               <Button asChild variant="mono" size="md" className="flex-1 min-w-[140px]">
-                                <a href={getClipDownloadUrl(clip.id)} download>
+                                <a href={getMomentDownloadUrl(clip.id)} download>
                                   Download Clip
                                 </a>
                               </Button>
@@ -852,7 +866,7 @@ function ProcessPageContent() {
         )}
 
         <div className="mt-12">
-          <h2 className="mb-4 text-2xl font-bold text-white">Your Projects</h2>
+          <h2 className="mb-4 text-2xl font-bold text-white">Your Videos</h2>
           {projectsLoading ? (
             <div className="flex items-center justify-center py-8">
               <div className="h-6 w-6 animate-spin rounded-full border-4 border-zinc-700 border-t-white"></div>
@@ -889,7 +903,7 @@ function ProcessPageContent() {
                         <div className="font-mono text-xs">
                           {project.video_id}
                         </div>
-                        <div>{project.clip_count} clip{project.clip_count !== 1 ? "s" : ""}</div>
+                        <div>{project.moment_count} moment{project.moment_count !== 1 ? "s" : ""}</div>
                         {project.duration && (
                           <div>Duration: {formatTime(project.duration)}</div>
                         )}

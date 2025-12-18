@@ -4,13 +4,13 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  getSavedClips,
-  getClipDownloadUrl,
-  getClipPlaybackUrl,
-  getClipThumbnailUrl,
-  unsaveClip,
+  getSavedMoments,
+  getMomentDownloadUrl,
+  getMomentPlaybackUrl,
+  getMomentThumbnailUrl,
+  unsaveMoment,
 } from "../../lib/api";
-import { ClipResponse } from "../../lib/types";
+import { MomentResponse } from "../../lib/types";
 
 function formatTime(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -25,7 +25,7 @@ function formatTime(seconds: number): string {
 
 export default function SavedPage() {
   const router = useRouter();
-  const [clips, setClips] = useState<ClipResponse[]>([]);
+  const [clips, setClips] = useState<MomentResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [thumbnailErrors, setThumbnailErrors] = useState<Record<string, boolean>>({});
@@ -39,7 +39,7 @@ export default function SavedPage() {
     try {
       setLoading(true);
       setError(null);
-      const data = await getSavedClips();
+      const data = await getSavedMoments();
       setClips(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load saved clips");
@@ -50,7 +50,7 @@ export default function SavedPage() {
 
   const handleUnsaveClip = async (clipId: string) => {
     try {
-      await unsaveClip(clipId);
+      await unsaveMoment(clipId);
       setClips(clips.filter((clip) => clip.id !== clipId));
       setError(null);
     } catch (err) {
@@ -76,10 +76,10 @@ export default function SavedPage() {
               Home
             </Link>
             <Link
-              href="/clips"
+              href="/moments"
               className="rounded-full bg-zinc-200 px-4 py-2 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600"
             >
-              All Clips
+              Videos
             </Link>
           </div>
         </div>
@@ -116,7 +116,7 @@ export default function SavedPage() {
                         </div>
                       )}
                       <img
-                        src={getClipThumbnailUrl(clip.id)}
+                        src={getMomentThumbnailUrl(clip.id)}
                         alt="Clip thumbnail"
                         className="h-full w-full object-cover"
                         onLoad={() => {
@@ -132,7 +132,7 @@ export default function SavedPage() {
                       />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none">
                         <video
-                          src={getClipPlaybackUrl(clip.id)}
+                          src={getMomentPlaybackUrl(clip.id)}
                           className="h-full w-full object-contain pointer-events-auto"
                           preload="metadata"
                           muted
@@ -150,7 +150,7 @@ export default function SavedPage() {
                     </>
                   ) : (
                     <video
-                      src={getClipPlaybackUrl(clip.id)}
+                      src={getMomentPlaybackUrl(clip.id)}
                       className="h-full w-full object-contain"
                       preload="metadata"
                       playsInline
@@ -175,7 +175,7 @@ export default function SavedPage() {
                   </div>
                   <div className="flex gap-2">
                     <a
-                      href={getClipDownloadUrl(clip.id)}
+                      href={getMomentDownloadUrl(clip.id)}
                       download
                       className="flex-1 rounded-full bg-foreground px-4 py-2 text-center text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
                     >

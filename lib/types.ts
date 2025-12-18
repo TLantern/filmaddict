@@ -11,13 +11,14 @@ export enum VideoStatus {
 export interface Highlight {
   start: number;
   end: number;
-  reason: string;
+  title: string | null;
+  summary: string | null;
   score: number;
 }
 
-export interface ClipResponse {
+export interface MomentResponse {
   id: string;
-  clip_url: string;
+  moment_url: string;
   start: number;
   end: number;
   thumbnail_url: string | null;
@@ -35,9 +36,9 @@ export interface HighlightsResponse {
   highlights: Highlight[];
 }
 
-export interface ClipsResponse {
+export interface MomentsResponse {
   video_id: string;
-  clips: ClipResponse[];
+  moments: MomentResponse[];
 }
 
 export interface UploadResponse {
@@ -46,30 +47,30 @@ export interface UploadResponse {
   storage_path: string;
 }
 
-export interface ClipFeedbackRequest {
+export interface MomentFeedbackRequest {
   rating: number;
   text_feedback?: string;
 }
 
-export interface ClipFeedbackResponse {
+export interface MomentFeedbackResponse {
   id: string;
   status: string;
 }
 
-export interface SavedClip {
+export interface SavedMoment {
   id: string;
-  clip_id: string;
+  moment_id: string;
   highlight_id: string | null;
   created_at: string;
 }
 
-export interface SavedClipResponse {
+export interface SavedMomentResponse {
   id: string;
-  clip_id: string;
+  moment_id: string;
   status: string;
 }
 
-export interface ClipDetailResponse {
+export interface MomentDetailResponse {
   id: string;
   video_id: string;
   start: number;
@@ -83,10 +84,34 @@ export interface ProjectResponse {
   video_id: string;
   created_at: string;
   duration: number | null;
-  clip_count: number;
+  moment_count: number;
 }
 
 export interface ProjectsResponse {
   projects: ProjectResponse[];
+}
+
+export interface TimelineItem {
+  id: string;
+  start: number;
+  end: number;
+  title: string;
+  momentUrl: string;
+}
+
+export interface Track {
+  id: string;
+  items: TimelineItem[];
+}
+
+export interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface TranscriptResponse {
+  video_id: string;
+  segments: TranscriptSegment[];
 }
 

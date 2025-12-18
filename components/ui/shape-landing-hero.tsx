@@ -74,11 +74,13 @@ function HeroGeometric({
     badge = "Design Collective",
     title1 = "Elevate Your Digital Vision",
     title2 = "Crafting Exceptional Websites",
+    subtitle,
     children,
 }: {
     badge?: string;
     title1?: string;
     title2?: string;
+    subtitle?: string;
     children?: React.ReactNode;
 }) {
     const fadeUpVariants = {
@@ -95,55 +97,30 @@ function HeroGeometric({
     };
 
     return (
-        <div className="relative min-h-screen w-full flex flex-col items-center justify-center overflow-hidden bg-[#030303] pt-32 pb-16">
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.05] via-transparent to-rose-500/[0.05] blur-3xl" />
+        <div className="relative min-h-screen w-full flex flex-col items-center justify-center overflow-hidden bg-gray-900 pt-32 pb-16">
+            {/* SaaS UI Background Gradient Pattern - Stronger at top, fading to bottom */}
+            <div
+                className="absolute inset-0 opacity-70"
+                style={{
+                    backgroundImage: `
+                        radial-gradient(at top left, #1a202c 40%, transparent 70%),
+                        radial-gradient(at top center, #805ad5 35%, transparent 65%),
+                        radial-gradient(at top right, #319795 45%, transparent 75%),
+                        radial-gradient(at center left, #00bcd4 20%, transparent 50%),
+                        radial-gradient(at center right, #805ad5 15%, transparent 45%),
+                        radial-gradient(at bottom center, rgba(26, 32, 44, 0.1) 10%, transparent 30%)
+                    `,
+                    backgroundBlendMode: 'saturation'
+                }}
+            />
 
-            <div className="absolute inset-0 overflow-hidden">
-                <ElegantShape
-                    delay={0.3}
-                    width={600}
-                    height={140}
-                    rotate={12}
-                    gradient="from-indigo-500/[0.15]"
-                    className="left-[-10%] md:left-[-5%] top-[15%] md:top-[20%]"
-                />
-
-                <ElegantShape
-                    delay={0.5}
-                    width={500}
-                    height={120}
-                    rotate={-15}
-                    gradient="from-rose-500/[0.15]"
-                    className="right-[-5%] md:right-[0%] top-[70%] md:top-[75%]"
-                />
-
-                <ElegantShape
-                    delay={0.4}
-                    width={300}
-                    height={80}
-                    rotate={-8}
-                    gradient="from-violet-500/[0.15]"
-                    className="left-[5%] md:left-[10%] bottom-[5%] md:bottom-[10%]"
-                />
-
-                <ElegantShape
-                    delay={0.6}
-                    width={200}
-                    height={60}
-                    rotate={20}
-                    gradient="from-amber-500/[0.15]"
-                    className="right-[15%] md:right-[20%] top-[10%] md:top-[15%]"
-                />
-
-                <ElegantShape
-                    delay={0.7}
-                    width={150}
-                    height={40}
-                    rotate={-25}
-                    gradient="from-cyan-500/[0.15]"
-                    className="left-[20%] md:left-[25%] top-[5%] md:top-[10%]"
-                />
-            </div>
+            {/* Linear gradient overlay for better text readability */}
+            <div
+                className="absolute inset-0 opacity-60"
+                style={{
+                    backgroundImage: 'linear-gradient(0deg, #1a202c 60%, rgba(0, 0, 0, 0) 100%)'
+                }}
+            />
 
             <div className="relative z-10 container mx-auto px-4 md:px-6 w-full">
                 <div className="max-w-3xl mx-auto text-center mb-8">
@@ -166,6 +143,11 @@ function HeroGeometric({
                                 {title2}
                             </span>
                         </h1>
+                        {subtitle && (
+                            <p className="text-white/70 text-lg md:text-xl max-w-2xl mx-auto">
+                                {subtitle}
+                            </p>
+                        )}
                     </motion.div>
                 </div>
 
@@ -176,7 +158,7 @@ function HeroGeometric({
                 )}
             </div>
 
-            <div className="absolute inset-0 bg-gradient-to-t from-[#030303] via-transparent to-[#030303]/80 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-gray-900/80 pointer-events-none" />
         </div>
     );
 }

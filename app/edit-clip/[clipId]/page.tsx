@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { getClipDetail, editClip } from "../../../lib/api";
-import { ClipDetailResponse } from "../../../lib/types";
+import { getMomentDetail, editMoment } from "../../../lib/api";
+import { MomentDetailResponse } from "../../../lib/types";
 
 function formatTime(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -187,7 +187,7 @@ export default function EditClipPage() {
   const router = useRouter();
   const clipId = params.clipId as string;
   
-  const [clipData, setClipData] = useState<ClipDetailResponse | null>(null);
+  const [clipData, setClipData] = useState<MomentDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -223,7 +223,7 @@ export default function EditClipPage() {
     try {
       setLoading(true);
       setError(null);
-      const data = await getClipDetail(clipId);
+      const data = await getMomentDetail(clipId);
       setClipData(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load clip data");
@@ -253,8 +253,8 @@ export default function EditClipPage() {
     try {
       setSaving(true);
       setError(null);
-      await editClip(clipId, startTime, endTime);
-      router.push("/clips");
+      await editMoment(clipId, startTime, endTime);
+      router.push("/moments");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save edited clip");
     } finally {
@@ -281,7 +281,7 @@ export default function EditClipPage() {
         <main className="w-full max-w-6xl mx-auto">
           <div className="mb-8">
             <Link
-              href="/clips"
+              href="/moments"
               className="rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
             >
               ← Back to Clips
@@ -310,7 +310,7 @@ export default function EditClipPage() {
             </p>
           </div>
           <Link
-            href="/clips"
+            href="/moments"
             className="rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
           >
             Cancel

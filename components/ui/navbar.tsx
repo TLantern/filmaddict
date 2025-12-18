@@ -13,10 +13,10 @@ export function Navbar() {
           
           <div className="flex items-center gap-6">
             <Link 
-              href="/clips" 
+              href="/moments" 
               className="text-sm text-white/80 hover:text-white transition-colors"
             >
-              All Clips
+              Videos
             </Link>
             <Link 
               href="/saved" 

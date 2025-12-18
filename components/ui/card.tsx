@@ -145,6 +145,11 @@ function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLDivEl
   return <div data-slot="card-description" className={cn('text-sm text-muted-foreground', className)} {...props} />;
 }
 
+// CardAction Component
+function CardAction({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div data-slot="card-action" className={cn('ml-auto', className)} {...props} />;
+}
+
 // Exports
-export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardHeading, CardTable, CardTitle, CardToolbar };
+export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardHeading, CardTable, CardTitle, CardToolbar, CardAction };
 

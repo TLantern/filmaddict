@@ -5,14 +5,14 @@ import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import {
   getProject,
-  getClipDownloadUrl,
-  getClipPlaybackUrl,
-  getClipPlaybackBlobUrl,
-  getClipThumbnailUrl,
-  saveClip,
-  unsaveClip,
+  getMomentDownloadUrl,
+  getMomentPlaybackUrl,
+  getMomentPlaybackBlobUrl,
+  getMomentThumbnailUrl,
+  saveMoment,
+  unsaveMoment,
 } from "../../../lib/api";
-import { ClipResponse } from "../../../lib/types";
+import { MomentResponse } from "../../../lib/types";
 
 function formatTime(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -30,7 +30,7 @@ export default function ProjectPage() {
   const router = useRouter();
   const videoId = params.videoId as string;
   
-  const [clips, setClips] = useState<ClipResponse[]>([]);
+  const [clips, setClips] = useState<MomentResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savedClips, setSavedClips] = useState<Record<string, boolean>>({});
@@ -61,7 +61,7 @@ export default function ProjectPage() {
       for (const clip of clips) {
         if (!clipVideoUrls[clip.id]) {
           try {
-            const blobUrl = await getClipPlaybackBlobUrl(clip.id);
+            const blobUrl = await getMomentPlaybackBlobUrl(clip.id);
             newUrls[clip.id] = blobUrl;
           } catch (err) {
             console.error(`Failed to load blob URL for clip ${clip.id}:`, err);
@@ -95,7 +95,7 @@ export default function ProjectPage() {
       setLoading(true);
       setError(null);
       const data = await getProject(videoId);
-      setClips(data.clips);
+      setClips(data.moments);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load project");
     } finally {
@@ -106,10 +106,10 @@ export default function ProjectPage() {
   const handleSaveClip = async (clipId: string) => {
     try {
       if (savedClips[clipId]) {
-        await unsaveClip(clipId);
+        await unsaveMoment(clipId);
         setSavedClips({ ...savedClips, [clipId]: false });
       } else {
-        await saveClip(clipId);
+        await saveMoment(clipId);
         setSavedClips({ ...savedClips, [clipId]: true });
       }
       setError(null);
@@ -136,10 +136,10 @@ export default function ProjectPage() {
               Home
             </Link>
             <Link
-              href="/clips"
+              href="/moments"
               className="rounded-full bg-zinc-200 px-4 py-2 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600"
             >
-              All Clips
+              Videos
             </Link>
           </div>
         </div>
@@ -174,7 +174,7 @@ export default function ProjectPage() {
                         </div>
                       )}
                       <img
-                        src={getClipThumbnailUrl(clip.id)}
+                        src={getMomentThumbnailUrl(clip.id)}
                         alt="Clip thumbnail"
                         className="h-full w-full object-cover"
                         onLoad={() => {
@@ -191,7 +191,7 @@ export default function ProjectPage() {
                       <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none">
                         <video
                           key={clipVideoUrls[clip.id] || clip.id}
-                          src={clipVideoUrls[clip.id] || getClipPlaybackUrl(clip.id)}
+                          src={clipVideoUrls[clip.id] || getMomentPlaybackUrl(clip.id)}
                           className="h-full w-full object-contain pointer-events-auto"
                           preload={isUsingNgrok && !clipVideoUrls[clip.id] ? "none" : "metadata"}
                           muted
@@ -237,7 +237,7 @@ export default function ProjectPage() {
                   ) : (
                     <video
                       key={clipVideoUrls[clip.id] || clip.id}
-                      src={clipVideoUrls[clip.id] || getClipPlaybackUrl(clip.id)}
+                      src={clipVideoUrls[clip.id] || getMomentPlaybackUrl(clip.id)}
                       className="h-full w-full object-contain"
                       preload={isUsingNgrok && !clipVideoUrls[clip.id] ? "none" : "metadata"}
                       playsInline
@@ -259,7 +259,7 @@ export default function ProjectPage() {
                         
                         // Try to reload with blob URL if not already using one
                         if (!video.src.startsWith("blob:") && isUsingNgrok && !clipVideoUrls[clip.id]) {
-                          getClipPlaybackBlobUrl(clip.id)
+                          getMomentPlaybackBlobUrl(clip.id)
                             .then((blobUrl) => {
                               setClipVideoUrls((prev) => ({ ...prev, [clip.id]: blobUrl }));
                               setClipVideoErrors((prev => {
@@ -282,7 +282,7 @@ export default function ProjectPage() {
                   </div>
                   <div className="flex gap-2">
                     <a
-                      href={getClipDownloadUrl(clip.id)}
+                      href={getMomentDownloadUrl(clip.id)}
                       download
                       className="flex-1 rounded-full bg-foreground px-4 py-2 text-center text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
                     >

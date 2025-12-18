@@ -3,16 +3,16 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
-  getAllClips,
-  getClipDownloadUrl,
-  getClipPlaybackUrl,
-  getClipThumbnailUrl,
-  saveClip,
-  unsaveClip,
+  getAllMoments,
+  getMomentDownloadUrl,
+  getMomentPlaybackUrl,
+  getMomentThumbnailUrl,
+  saveMoment,
+  unsaveMoment,
   deleteAllClips,
 } from "../../lib/api";
 import { useRouter } from "next/navigation";
-import { ClipResponse } from "../../lib/types";
+import { MomentResponse } from "../../lib/types";
 
 function formatTime(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -27,7 +27,7 @@ function formatTime(seconds: number): string {
 
 export default function ClipsPage() {
   const router = useRouter();
-  const [clips, setClips] = useState<ClipResponse[]>([]);
+  const [clips, setClips] = useState<MomentResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savedClips, setSavedClips] = useState<Record<string, boolean>>({});
@@ -43,8 +43,8 @@ export default function ClipsPage() {
     try {
       setLoading(true);
       setError(null);
-      const data = await getAllClips();
-      setClips(data.clips);
+      const data = await getAllMoments();
+      setClips(data.moments);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load clips");
     } finally {
@@ -55,10 +55,10 @@ export default function ClipsPage() {
   const handleSaveClip = async (clipId: string) => {
     try {
       if (savedClips[clipId]) {
-        await unsaveClip(clipId);
+        await unsaveMoment(clipId);
         setSavedClips({ ...savedClips, [clipId]: false });
       } else {
-        await saveClip(clipId);
+        await saveMoment(clipId);
         setSavedClips({ ...savedClips, [clipId]: true });
       }
       setError(null);
@@ -68,7 +68,7 @@ export default function ClipsPage() {
   };
 
   const handleClearAll = async () => {
-    if (!confirm("Are you sure you want to delete all clips? This action cannot be undone.")) {
+    if (!confirm("Are you sure you want to delete all videos? This action cannot be undone.")) {
       return;
     }
 
@@ -91,7 +91,7 @@ export default function ClipsPage() {
       <main className="w-full max-w-6xl mx-auto">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-4xl font-bold text-black dark:text-zinc-50">All Clips</h1>
+            <h1 className="text-4xl font-bold text-black dark:text-zinc-50">Videos</h1>
             <p className="mt-2 text-lg text-zinc-600 dark:text-zinc-400">
               Browse all video clips
             </p>
@@ -151,7 +151,7 @@ export default function ClipsPage() {
                         </div>
                       )}
                       <img
-                        src={getClipThumbnailUrl(clip.id)}
+                        src={getMomentThumbnailUrl(clip.id)}
                         alt="Clip thumbnail"
                         className="h-full w-full object-cover"
                         onLoad={() => {
@@ -167,7 +167,7 @@ export default function ClipsPage() {
                       />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none">
                         <video
-                          src={getClipPlaybackUrl(clip.id)}
+                          src={getMomentPlaybackUrl(clip.id)}
                           className="h-full w-full object-contain pointer-events-auto"
                           preload="metadata"
                           muted
@@ -185,7 +185,7 @@ export default function ClipsPage() {
                     </>
                   ) : (
                     <video
-                      src={getClipPlaybackUrl(clip.id)}
+                      src={getMomentPlaybackUrl(clip.id)}
                       className="h-full w-full object-contain"
                       preload="metadata"
                       playsInline
@@ -210,7 +210,7 @@ export default function ClipsPage() {
                   </div>
                   <div className="flex gap-2">
                     <a
-                      href={getClipDownloadUrl(clip.id)}
+                      href={getMomentDownloadUrl(clip.id)}
                       download
                       className="flex-1 rounded-full bg-foreground px-4 py-2 text-center text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
                     >
