@@ -13,7 +13,6 @@ import {
   getMomentPlaybackUrl,
   getMomentThumbnailUrl,
   getMomentPlaybackBlobUrl,
-  submitMomentFeedback,
   saveMoment,
   unsaveMoment,
   triggerLearning,
@@ -83,11 +82,7 @@ function ProcessPageContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Clip feedback state
-  const [clipRatings, setClipRatings] = useState<Record<string, number>>({});
-  const [clipTextFeedback, setClipTextFeedback] = useState<Record<string, string>>({});
   const [savedClips, setSavedClips] = useState<Record<string, boolean>>({});
-  const [feedbackSubmitting, setFeedbackSubmitting] = useState<Record<string, boolean>>({});
   const [learningStatus, setLearningStatus] = useState<{
     isLoading: boolean;
     message: string | null;
@@ -116,7 +111,7 @@ function ProcessPageContent() {
   const loadProjects = async () => {
     try {
       setProjectsLoading(true);
-      const data = await getProjects();
+      const data = await getProjects(null);
       setProjects(data.projects);
       
       // Fetch thumbnails for each project
@@ -364,9 +359,9 @@ function ProcessPageContent() {
     try {
       let response;
       if (uploadMethod === "file" && selectedFile) {
-        response = await uploadVideo(selectedFile);
+        response = await uploadVideo(selectedFile, undefined, null);
       } else if (uploadMethod === "youtube" && youtubeUrl) {
-        response = await uploadYouTubeVideo(youtubeUrl);
+        response = await uploadYouTubeVideo(youtubeUrl, undefined, null);
       } else {
         throw new Error("Please select a file or enter a YouTube URL");
       }
@@ -383,21 +378,6 @@ function ProcessPageContent() {
     return clips.find(
       (clip) => Math.abs(clip.start - highlight.start) < 0.5 && Math.abs(clip.end - highlight.end) < 0.5
     );
-  };
-
-  const handleSubmitFeedback = async (clipId: string) => {
-    try {
-      setFeedbackSubmitting({ ...feedbackSubmitting, [clipId]: true });
-      const rating = clipRatings[clipId] || 50;
-      const textFeedback = clipTextFeedback[clipId];
-      
-      await submitMomentFeedback(clipId, rating, textFeedback);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit feedback");
-    } finally {
-      setFeedbackSubmitting({ ...feedbackSubmitting, [clipId]: false });
-    }
   };
 
   const handleSaveClip = async (clipId: string) => {
@@ -771,61 +751,6 @@ function ProcessPageContent() {
                               </Button>
                             </div>
                           </div>
-                          
-                          <div className="border-t border-zinc-700 pt-4">
-                            <h3 className="text-sm font-medium text-zinc-100 mb-3">
-                              Rate this clip
-                            </h3>
-                            <div className="space-y-4">
-                              <div className="flex items-center gap-4">
-                                <span className="text-sm text-zinc-300">
-                                  Rating:
-                                </span>
-                                <Slider
-                                  value={[clipRatings[clip.id] || 50]}
-                                  onValueChange={(value) =>
-                                    setClipRatings({ ...clipRatings, [clip.id]: value[0] })
-                                  }
-                                  min={0}
-                                  max={100}
-                                  step={1}
-                                  aria-label="Clip rating"
-                                />
-                              </div>
-                              
-                              <div>
-                                <label
-                                  htmlFor={`feedback-${clip.id}`}
-                                  className="block text-sm text-zinc-300 mb-2"
-                                >
-                                  Feedback (optional):
-                                </label>
-                                <textarea
-                                  id={`feedback-${clip.id}`}
-                                  value={clipTextFeedback[clip.id] || ""}
-                                  onChange={(e) =>
-                                    setClipTextFeedback({
-                                      ...clipTextFeedback,
-                                      [clip.id]: e.target.value,
-                                    })
-                                  }
-                                  placeholder="What did you think about this clip?"
-                                  className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-500/50"
-                                  rows={3}
-                                />
-                              </div>
-                              
-                              <Button
-                                onClick={() => handleSubmitFeedback(clip.id)}
-                                disabled={feedbackSubmitting[clip.id]}
-                                variant="mono"
-                                size="md"
-                                className="w-full max-w-xs"
-                              >
-                                {feedbackSubmitting[clip.id] ? "Submitting..." : "Submit Feedback"}
-                              </Button>
-                            </div>
-                          </div>
                         </div>
                       </div>
                     )}
@@ -875,39 +800,48 @@ function ProcessPageContent() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {projects.map((project) => {
                 const thumbnailUrl = projectThumbnails[project.video_id];
+                const videoId = project.video_id;
                 return (
                   <Card
-                    key={project.video_id}
+                    key={videoId}
                     className="overflow-hidden border-2 border-zinc-700 hover:border-zinc-500 transition-all duration-300 hover:shadow-2xl hover:shadow-blue-500/20 hover:scale-[1.02] cursor-pointer bg-zinc-900/80 backdrop-blur-sm"
-                    onClick={() => handleProjectClick(project.video_id)}
+                    onClick={() => handleProjectClick(videoId)}
                   >
-                    <div className="w-full aspect-video bg-zinc-200 dark:bg-zinc-800 overflow-hidden relative">
+                    <div className="w-full aspect-video bg-zinc-800 overflow-hidden relative">
                       {thumbnailUrl ? (
                         <img
                           src={thumbnailUrl}
-                          alt={`Project ${project.video_id}`}
+                          alt={`Video ${videoId}`}
                           className="w-full h-full object-cover"
                           loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            if (e.currentTarget.parentElement) {
+                              const placeholder = e.currentTarget.parentElement.querySelector('.thumbnail-placeholder');
+                              if (placeholder) {
+                                (placeholder as HTMLElement).style.display = 'flex';
+                              }
+                            }
+                          }}
                         />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400 text-sm">
-                          No thumbnail
-                        </div>
-                      )}
+                      ) : null}
+                      <div className={`w-full h-full flex items-center justify-center text-zinc-500 text-sm ${thumbnailUrl ? 'hidden thumbnail-placeholder' : ''}`}>
+                        No thumbnail
+                      </div>
                     </div>
                     <CardContent className="p-4">
-                      <div className="mb-2 text-lg font-semibold">
-                        Project
+                      <div className="mb-2 text-lg font-semibold text-white">
+                        Video Project
                       </div>
-                      <div className="space-y-1 text-sm text-muted-foreground">
-                        <div className="font-mono text-xs">
-                          {project.video_id}
+                      <div className="space-y-1 text-sm text-zinc-400">
+                        <div className="font-mono text-xs text-zinc-300 break-all">
+                          ID: {videoId}
                         </div>
                         <div>{project.moment_count} moment{project.moment_count !== 1 ? "s" : ""}</div>
                         {project.duration && (
                           <div>Duration: {formatTime(project.duration)}</div>
                         )}
-                        <div className="text-xs">
+                        <div className="text-xs text-zinc-500">
                           Created: {new Date(project.created_at).toLocaleDateString()}
                         </div>
                       </div>

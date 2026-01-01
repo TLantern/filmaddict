@@ -47,7 +47,7 @@ export default function LandingPage() {
   const loadProjects = async () => {
     try {
       setProjectsLoading(true);
-      const projectsData = await getProjects();
+      const projectsData = await getProjects(null);
       setProjects(projectsData.projects);
 
       for (const project of projectsData.projects) {
@@ -77,7 +77,7 @@ export default function LandingPage() {
   };
 
   const handleProjectClick = (videoId: string) => {
-    router.push(`/projects/${videoId}`);
+    router.push(`/timeline/${videoId}`);
   };
 
   const handleFileSelect = useCallback((file: File) => {
@@ -134,13 +134,58 @@ export default function LandingPage() {
     try {
       let response;
       if (uploadMethod === "file" && selectedFile) {
-        response = await uploadVideo(selectedFile);
+        response = await uploadVideo(selectedFile, undefined, null);
       } else if (uploadMethod === "youtube" && youtubeUrl) {
-        response = await uploadYouTubeVideo(youtubeUrl);
+        response = await uploadYouTubeVideo(youtubeUrl, undefined, null);
       } else {
         throw new Error("Please select a file or enter a YouTube URL");
       }
 
+      // Wait for processing to complete before redirecting
+      const { getVideoStatus } = await import("@/lib/api");
+      const { VideoStatus } = await import("@/lib/types");
+      
+      const pollStatus = async (): Promise<void> => {
+        return new Promise((resolve, reject) => {
+          const maxAttempts = 300; // 5 minutes max (2 second intervals)
+          let attempts = 0;
+          
+          const checkStatus = async () => {
+            try {
+              attempts++;
+              const statusData = await getVideoStatus(response.video_id);
+              
+              if (statusData.status === VideoStatus.DONE) {
+                resolve();
+              } else if (statusData.status === VideoStatus.FAILED) {
+                reject(new Error("Video processing failed"));
+              } else if (attempts >= maxAttempts) {
+                reject(new Error("Processing timeout - video is still processing"));
+              } else {
+                // Check again in 2 seconds
+                setTimeout(checkStatus, 2000);
+              }
+            } catch (err) {
+              if (attempts >= maxAttempts) {
+                reject(err);
+              } else {
+                // Retry on error
+                setTimeout(checkStatus, 2000);
+              }
+            }
+          };
+          
+          // Start checking after 2 seconds
+          setTimeout(checkStatus, 2000);
+        });
+      };
+
+      // Show loading message while waiting
+      setError("Processing video... This may take a few minutes.");
+      
+      await pollStatus();
+      
+      // Redirect once processing is complete
       router.push(`/?video_id=${response.video_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");

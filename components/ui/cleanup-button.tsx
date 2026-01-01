@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import styled from 'styled-components';
 import { Loader2 } from 'lucide-react';
 
@@ -10,9 +10,19 @@ interface ButtonProps {
 }
 
 const Button: React.FC<ButtonProps> = ({ disabled, loading, type = 'submit', active = false }) => {
+  const [clicked, setClicked] = useState(false);
+
+  const handleClick = () => {
+    if (!disabled && !loading) {
+      setClicked(true);
+    }
+  };
+
+  const isActive = active || clicked || loading;
+
   return (
-    <StyledWrapper $active={active}>
-      <button className="button" type={type} disabled={disabled || loading}>
+    <StyledWrapper $active={isActive}>
+      <button className="button" type={type} disabled={disabled || loading} onClick={handleClick}>
         <div className="dots_border" />
         {loading ? (
           <>
@@ -115,6 +125,13 @@ const StyledWrapper = styled.div<{ $active?: boolean }>`
     box-shadow: 0 0 20px rgba(255, 255, 255, 0.3), 0 0 40px rgba(255, 255, 255, 0.2);
   }
 
+  ${props => props.$active ? `
+    .button:not(:disabled),
+    .button:disabled {
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.3), 0 0 40px rgba(255, 255, 255, 0.2);
+    }
+  ` : ''}
+
   .button:active:not(:disabled) {
     transform: scale(1);
   }
@@ -127,6 +144,16 @@ const StyledWrapper = styled.div<{ $active?: boolean }>`
   .button:disabled:hover {
     --active: 0;
   }
+
+  ${props => props.$active ? `
+    .button:disabled {
+      --active: 1;
+      opacity: 1;
+    }
+    .button:disabled:hover {
+      --active: 1;
+    }
+  ` : ''}
 
   .button .dots_border {
     --size_border: calc(100% + 2px);

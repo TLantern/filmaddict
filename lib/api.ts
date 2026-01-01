@@ -3,19 +3,18 @@ import {
   VideoStatusResponse,
   HighlightsResponse,
   MomentsResponse,
-  MomentFeedbackRequest,
-  MomentFeedbackResponse,
   SavedMomentResponse,
   MomentDetailResponse,
   MomentResponse,
   ProjectsResponse,
   TranscriptResponse,
+  SegmentsResponse,
 } from "./types";
 
 // Use environment variable for API URL
 // When using ngrok, set NEXT_PUBLIC_API_URL to your backend ngrok URL
 // Example: NEXT_PUBLIC_API_URL=https://abc123.ngrok-free.app
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   const url = process.env.NEXT_PUBLIC_API_URL;
   if (!url) {
     throw new Error("NEXT_PUBLIC_API_URL environment variable is required");
@@ -24,10 +23,15 @@ function getApiBaseUrl(): string {
 }
 
 // Helper to add ngrok bypass header if using ngrok
-function getHeaders(additionalHeaders?: Record<string, string>): Record<string, string> {
+function getHeaders(additionalHeaders?: Record<string, string>, userId?: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     ...additionalHeaders,
   };
+  
+  // Add Clerk user ID header if provided
+  if (userId) {
+    headers["X-Clerk-User-Id"] = userId;
+  }
   
   // Add ngrok-skip-browser-warning header when using ngrok
   if (getApiBaseUrl().includes("ngrok")) {
@@ -59,7 +63,7 @@ async function fetchWithErrorHandling(url: string, options?: RequestInit): Promi
   }
 }
 
-export async function uploadVideo(file: File, aspectRatio?: string): Promise<UploadResponse> {
+export async function uploadVideo(file: File, aspectRatio?: string, userId?: string | null): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
   if (aspectRatio) {
@@ -68,19 +72,19 @@ export async function uploadVideo(file: File, aspectRatio?: string): Promise<Upl
 
   const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/upload`, {
     method: "POST",
-    headers: getHeaders(),
+    headers: getHeaders(undefined, userId),
     body: formData,
   });
 
   return handleResponse<UploadResponse>(response);
 }
 
-export async function uploadYouTubeVideo(youtubeUrl: string, aspectRatio?: string): Promise<UploadResponse> {
+export async function uploadYouTubeVideo(youtubeUrl: string, aspectRatio?: string, userId?: string | null): Promise<UploadResponse> {
   const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/youtube`, {
     method: "POST",
     headers: getHeaders({
       "Content-Type": "application/json",
-    }),
+    }, userId),
     body: JSON.stringify({ youtube_url: youtubeUrl, aspect_ratio: aspectRatio }),
   });
 
@@ -176,23 +180,6 @@ export function getMomentThumbnailUrl(momentId: string): string {
   return `${getApiBaseUrl()}/moments/${momentId}/thumbnail`;
 }
 
-export async function submitMomentFeedback(
-  momentId: string,
-  rating: number,
-  textFeedback?: string
-): Promise<MomentFeedbackResponse> {
-  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/moments/${momentId}/feedback`, {
-    method: "POST",
-    headers: getHeaders({
-      "Content-Type": "application/json",
-    }),
-    body: JSON.stringify({
-      rating,
-      text_feedback: textFeedback,
-    }),
-  });
-  return handleResponse<MomentFeedbackResponse>(response);
-}
 
 export async function saveMoment(momentId: string): Promise<SavedMomentResponse> {
   const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/moments/${momentId}/save`, {
@@ -275,11 +262,11 @@ export async function editMoment(
   return handleResponse<MomentResponse>(response);
 }
 
-export async function getProjects(): Promise<ProjectsResponse> {
+export async function getProjects(userId?: string | null): Promise<ProjectsResponse> {
   const url = `${getApiBaseUrl()}/projects`;
   console.log("[API] Fetching projects from:", url);
   const response = await fetchWithErrorHandling(url, {
-    headers: getHeaders(),
+    headers: getHeaders(undefined, userId),
   });
   const data = await handleResponse<ProjectsResponse>(response);
   console.log("[API] Projects response:", { count: data.projects.length, projects: data.projects });
@@ -306,5 +293,193 @@ export async function getTranscript(videoId: string): Promise<TranscriptResponse
   const data = await handleResponse<TranscriptResponse>(response);
   console.log(`[API] Transcript response:`, { count: data.segments.length });
   return data;
+}
+
+export async function getSegments(videoId: string, label?: string): Promise<SegmentsResponse> {
+  const url = label 
+    ? `${getApiBaseUrl()}/videos/${videoId}/segments?label=${label}`
+    : `${getApiBaseUrl()}/videos/${videoId}/segments`;
+  console.log(`[API] Fetching segments from: ${url}`);
+  const response = await fetchWithErrorHandling(url, {
+    headers: getHeaders(),
+  });
+  const data = await handleResponse<SegmentsResponse>(response);
+  console.log(`[API] Segments response:`, { count: data.segments.length, label });
+  return data;
+}
+
+export async function storePendingCuts(
+  videoId: string,
+  segments: Array<{ start_time: number; end_time: number }>
+): Promise<{ status: string; video_id: string; pending_cuts: Array<{ start_time: number; end_time: number }>; total_pending: number }> {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/cut`, {
+    method: "POST",
+    headers: getHeaders({
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify({
+      segments_to_remove: segments.map(seg => ({
+        start_time: seg.start_time,
+        end_time: seg.end_time,
+      })),
+    }),
+  });
+  return handleResponse<{ status: string; video_id: string; pending_cuts: Array<{ start_time: number; end_time: number }>; total_pending: number }>(response);
+}
+
+export async function getPendingCuts(
+  videoId: string
+): Promise<{ status: string; video_id: string; pending_cuts: Array<{ start_time: number; end_time: number }>; total_pending: number }> {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/cut`, {
+    method: "GET",
+    headers: getHeaders(),
+  });
+  return handleResponse<{ status: string; video_id: string; pending_cuts: Array<{ start_time: number; end_time: number }>; total_pending: number }>(response);
+}
+
+export async function clearPendingCuts(
+  videoId: string
+): Promise<{ status: string; video_id: string; message: string }> {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/cut`, {
+    method: "DELETE",
+    headers: getHeaders(),
+  });
+  return handleResponse<{ status: string; video_id: string; message: string }>(response);
+}
+
+export async function saveVideoCuts(
+  videoId: string
+): Promise<{ status: string; video_id: string; storage_path: string; segments_removed: number; message: string }> {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/cut/save`, {
+    method: "POST",
+    headers: getHeaders(),
+  });
+  return handleResponse<{ status: string; video_id: string; storage_path: string; segments_removed: number; message: string }>(response);
+}
+
+export type ExportFormat = "mp4" | "mov_prores422" | "mov_prores4444" | "webm" | "xml" | "edl" | "aaf";
+
+export async function exportVideo(
+  videoId: string,
+  format: ExportFormat,
+  segmentsToRemove?: Array<{ start_time: number; end_time: number }>
+): Promise<Blob> {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/export`, {
+    method: "POST",
+    headers: {
+      ...getHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      format,
+      segments_to_remove: segmentsToRemove,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: "Export failed" }));
+    throw new Error(error.detail || "Export failed");
+  }
+
+  return response.blob();
+}
+
+export async function reprocessVideo(
+  videoId: string
+): Promise<{ status: string; video_id: string; message: string }> {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/reprocess`, {
+    method: "POST",
+    headers: getHeaders(),
+  });
+  return handleResponse<{ status: string; video_id: string; message: string }>(response);
+}
+
+export async function submitSegmentFeedback(
+  videoId: string,
+  segmentId: string | null,
+  feedbackType: "GREAT" | "FINE" | "WRONG",
+  startTime?: number,
+  endTime?: number
+): Promise<{ id: string; video_segment_id: string; feedback_type: string; created_at: string }> {
+  // Use "lookup" if no segment ID, otherwise use the provided ID
+  const idOrLookup = segmentId || "lookup";
+  const body: { feedback_type: string; start_time?: number; end_time?: number } = {
+    feedback_type: feedbackType,
+  };
+  
+  // Include time range if using lookup
+  if (!segmentId && startTime !== undefined && endTime !== undefined) {
+    body.start_time = startTime;
+    body.end_time = endTime;
+  }
+  
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/segments/${idOrLookup}/feedback`, {
+    method: "POST",
+    headers: getHeaders({
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify(body),
+  });
+  return handleResponse<{ id: string; video_segment_id: string; feedback_type: string; created_at: string }>(response);
+}
+
+export async function saveTimeline(
+  videoId: string,
+  state: {
+    projectName?: string;
+    markers?: Array<{ id: string; time: number; label?: string }>;
+    selections?: string[];
+    currentTime?: number;
+    inPoint?: number;
+    outPoint?: number;
+    zoom?: number;
+    viewPreferences?: {
+      snapEnabled?: boolean;
+      loopPlayback?: boolean;
+    };
+  },
+  userId?: string | null
+): Promise<{ status: string; video_id: string; timeline_id: string }> {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/timelines/${videoId}`, {
+    method: "POST",
+    headers: getHeaders({
+      "Content-Type": "application/json",
+    }, userId),
+    body: JSON.stringify(state),
+  });
+  return handleResponse<{ status: string; video_id: string; timeline_id: string }>(response);
+}
+
+export async function getTimeline(videoId: string): Promise<{
+  video_id: string;
+  project_name: string | null;
+  markers: Array<{ id: string; time: number; label?: string }>;
+  selections: string[];
+  current_time: number;
+  in_point: number | null;
+  out_point: number | null;
+  zoom: number;
+  view_preferences: {
+    snapEnabled: boolean;
+    loopPlayback: boolean;
+  };
+}> {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/timelines/${videoId}`, {
+    headers: getHeaders(),
+  });
+  return handleResponse<{
+    video_id: string;
+    project_name: string | null;
+    markers: Array<{ id: string; time: number; label?: string }>;
+    selections: string[];
+    current_time: number;
+    in_point: number | null;
+    out_point: number | null;
+    zoom: number;
+    view_preferences: {
+      snapEnabled: boolean;
+      loopPlayback: boolean;
+    };
+  }>(response);
 }
 
