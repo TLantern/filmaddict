@@ -242,6 +242,7 @@ const DashboardContent = ({ isDark, setIsDark }: DashboardContentProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [showYoutubeAdvisor, setShowYoutubeAdvisor] = useState(false);
 
   const username = user?.firstName || user?.username || user?.fullName || "there";
 
@@ -638,10 +639,30 @@ const DashboardContent = ({ isDark, setIsDark }: DashboardContentProps) => {
                             setYoutubeUrl(e.target.value);
                             setUploadMethod("youtube");
                             setUploadError(null);
+                            if (e.target.value.length > 0) {
+                              setShowYoutubeAdvisor(true);
+                            }
+                          }}
+                          onFocus={() => setShowYoutubeAdvisor(true)}
+                          onBlur={() => {
+                            if (!youtubeUrl) {
+                              setShowYoutubeAdvisor(false);
+                            }
                           }}
                           placeholder="Drop your YouTube URL here"
                           className="pl-10 bg-white/50 dark:bg-gray-800/50 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus-visible:ring-[#e3b54a] dark:focus-visible:ring-[#FFD873] backdrop-blur-sm"
                         />
+                      </div>
+                      <div 
+                        className={`mt-3 px-4 py-3 bg-blue-500/10 dark:bg-blue-500/20 border border-blue-500/30 dark:border-blue-500/40 rounded-md backdrop-blur-sm transition-all duration-300 ease-in-out ${
+                          showYoutubeAdvisor 
+                            ? 'opacity-100 translate-y-0' 
+                            : 'opacity-0 -translate-y-2 pointer-events-none h-0 mt-0 py-0 overflow-hidden'
+                        }`}
+                      >
+                        <p className="text-sm text-blue-600 dark:text-blue-400">
+                          ⏱️ Processing may take 5-10 minutes. You can leave and come back - we'll notify you when it's ready!
+                        </p>
                       </div>
                     </div>
 
