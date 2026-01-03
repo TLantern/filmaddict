@@ -928,6 +928,28 @@ function TimelineItemComponent({
     };
   }, [isDragging, sequenceId, trackId, item.id, onMoveItem, endTime, startTime, timelineWidth, itemDuration, duration]);
 
+  const handleDownloadHighlight = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoId || !duration || isDownloading) return;
+    
+    try {
+      setIsDownloading(true);
+      const blob = await exportHighlight(videoId, item.start, item.end, duration);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `highlight_${item.start.toFixed(2)}s_${item.end.toFixed(2)}s.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error downloading highlight:", err);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [videoId, duration, item.start, item.end, isDownloading]);
+
   // Early returns - MUST be after all hooks to follow Rules of Hooks
   if (item.end < startTime || item.start > endTime) return null;
 
@@ -979,28 +1001,6 @@ function TimelineItemComponent({
   const borderTopRightRadius = (hasCutAtEnd || shouldCurveRight) ? curvedRadius : baseRadius;
   const borderBottomLeftRadius = borderTopLeftRadius;
   const borderBottomRightRadius = borderTopRightRadius;
-
-  const handleDownloadHighlight = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!videoId || !duration || isDownloading) return;
-    
-    try {
-      setIsDownloading(true);
-      const blob = await exportHighlight(videoId, item.start, item.end, duration);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `highlight_${item.start.toFixed(2)}s_${item.end.toFixed(2)}s.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Error downloading highlight:", err);
-    } finally {
-      setIsDownloading(false);
-    }
-  }, [videoId, duration, item.start, item.end, isDownloading]);
 
   // Calculate if position changed for animation
   const hasPositionChanged = previousPosition && (
