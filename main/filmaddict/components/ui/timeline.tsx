@@ -2163,4 +2163,4 @@ function TimelineComponent({
   );
 }
 
-export const Timeline: React.ComponentType<TimelineProps> = TimelineComponent; 
+export const Timeline: React.FC<TimelineProps> = TimelineComponent; 
