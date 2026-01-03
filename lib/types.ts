@@ -30,6 +30,7 @@ export interface VideoStatusResponse {
   status: VideoStatus;
   duration: number | null;
   created_at: string;
+  error_message?: string | null;
 }
 
 export interface HighlightsResponse {

@@ -240,6 +240,7 @@ export default function LandingPage() {
                   status: statusData.status,
                   duration: statusData.duration,
                   createdAt: statusData.created_at,
+                  errorMessage: statusData.error_message || 'No error message from backend',
                   totalAttempts: attempts,
                   totalTime: timeToFailure,
                   statusData: JSON.stringify(statusData, null, 2),

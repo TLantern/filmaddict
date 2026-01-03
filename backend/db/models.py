@@ -34,6 +34,7 @@ class Video(Base):
     duration = Column(Float, nullable=True)
     aspect_ratio = Column(String, nullable=True, default="16:9")  # 9:16, 16:9, 1:1, 4:5, original
     status = Column(String, nullable=False, default=VideoStatus.UPLOADED.value)
+    error_message = Column(Text, nullable=True)  # Error message if processing failed
     pending_cuts = Column(JSONB, nullable=True)  # List of {start_time, end_time} segments to remove
     clerk_user_id = Column(String, nullable=True, index=True)  # Clerk user ID for user-based filtering
     thumbnail_path = Column(String, nullable=True)  # Path to thumbnail image in storage

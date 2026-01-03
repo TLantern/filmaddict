@@ -302,6 +302,7 @@ function ProcessPageContent() {
             status: statusData.status,
             duration: statusData.duration,
             createdAt: statusData.created_at,
+            errorMessage: statusData.error_message || 'No error message from backend',
             statusData: JSON.stringify(statusData, null, 2),
             failureAnalysis,
             statusHistory: statusHistoryRef.current.map(s => ({
