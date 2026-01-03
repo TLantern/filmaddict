@@ -95,6 +95,9 @@ function ProcessPageContent() {
   const [blobUrlsLoading, setBlobUrlsLoading] = useState(false);
   const clipsPollingStarted = useRef(false);
   const loadedClipIds = useRef<Set<string>>(new Set());
+  const statusHistoryRef = useRef<Array<{ status: string; timestamp: number; duration?: number | null }>>([]);
+  const lastStatusRef = useRef<string | null>(null);
+  const processingStartTimeRef = useRef<number | null>(null);
   
   const isUsingNgrok = typeof window !== "undefined" && 
     (process.env.NEXT_PUBLIC_API_URL?.includes("ngrok") || 
@@ -179,7 +182,15 @@ function ProcessPageContent() {
   useEffect(() => {
     if (!videoId) {
       clipsPollingStarted.current = false;
+      statusHistoryRef.current = [];
+      lastStatusRef.current = null;
+      processingStartTimeRef.current = null;
       return;
+    }
+
+    // Initialize processing start time when videoId is set
+    if (!processingStartTimeRef.current) {
+      processingStartTimeRef.current = Date.now();
     }
 
     let intervalId: NodeJS.Timeout | null = null;
@@ -189,6 +200,22 @@ function ProcessPageContent() {
       try {
         console.log(`[Process] Polling status for video ${videoId}...`);
         const statusData = await getVideoStatus(videoId!);
+        
+        // Track status transitions
+        if (statusData.status !== lastStatusRef.current) {
+          statusHistoryRef.current.push({
+            status: statusData.status,
+            timestamp: Date.now(),
+            duration: statusData.duration,
+          });
+          lastStatusRef.current = statusData.status;
+          console.log(`[Process] Status transition: ${statusData.status}`, {
+            videoId: videoId,
+            elapsedTime: processingStartTimeRef.current ? Date.now() - processingStartTimeRef.current : 0,
+            duration: statusData.duration,
+          });
+        }
+        
         console.log(`[Process] Status received:`, {
           video_id: statusData.video_id,
           status: statusData.status,
@@ -237,6 +264,53 @@ function ProcessPageContent() {
             router.push(`/timeline/${videoId}`);
           }, 500);
         } else if (statusData.status === VideoStatus.FAILED) {
+          // Analyze why it failed
+          const timeToFailure = processingStartTimeRef.current ? Date.now() - processingStartTimeRef.current : 0;
+          const lastSuccessfulStatus = statusHistoryRef.current.length > 1 ? statusHistoryRef.current[statusHistoryRef.current.length - 2] : null;
+          const failureAnalysis = {
+            failedAtStage: lastStatusRef.current || 'UNKNOWN',
+            lastSuccessfulStage: lastSuccessfulStatus?.status || 'UPLOADED',
+            timeInLastStage: lastSuccessfulStatus ? Date.now() - lastSuccessfulStatus.timestamp : null,
+            totalProcessingTime: timeToFailure,
+            statusProgression: statusHistoryRef.current.map(s => s.status).join(' -> '),
+            possibleReasons: [] as string[],
+          };
+          
+          // Analyze possible reasons
+          if (lastStatusRef.current === VideoStatus.UPLOADED || lastStatusRef.current === VideoStatus.QUEUED) {
+            failureAnalysis.possibleReasons.push('Failed during upload/queuing - check file format, size, or server resources');
+          } else if (lastStatusRef.current === VideoStatus.PROCESSING) {
+            failureAnalysis.possibleReasons.push('Failed during initial processing - check video codec compatibility');
+          } else if (lastStatusRef.current === VideoStatus.TRANSCRIBED) {
+            failureAnalysis.possibleReasons.push('Failed after transcription - check audio quality or transcription service');
+          } else if (lastStatusRef.current === VideoStatus.HIGHLIGHTS_FOUND) {
+            failureAnalysis.possibleReasons.push('Failed after highlights detection - check analysis pipeline');
+          }
+          
+          if (timeToFailure < 10000) {
+            failureAnalysis.possibleReasons.push('Failed very quickly (<10s) - likely file format or upload issue');
+          } else if (timeToFailure > 600000) {
+            failureAnalysis.possibleReasons.push('Failed after long processing (>10min) - possible timeout or resource exhaustion');
+          }
+          
+          if (!statusData.duration) {
+            failureAnalysis.possibleReasons.push('No duration extracted - video file may be corrupted or unsupported format');
+          }
+          
+          console.error('[Video Processing] Processing failed - detailed analysis (process page):', {
+            videoId: videoId,
+            status: statusData.status,
+            duration: statusData.duration,
+            createdAt: statusData.created_at,
+            statusData: JSON.stringify(statusData, null, 2),
+            failureAnalysis,
+            statusHistory: statusHistoryRef.current.map(s => ({
+              status: s.status,
+              timestamp: new Date(s.timestamp).toISOString(),
+              duration: s.duration,
+            })),
+            timestamp: new Date().toISOString(),
+          });
           setError("Video processing failed. Please try again.");
           if (intervalId) {
             clearInterval(intervalId);

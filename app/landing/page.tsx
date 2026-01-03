@@ -133,6 +133,16 @@ export default function LandingPage() {
 
     try {
       let response;
+      const uploadStartTime = Date.now();
+      
+      console.log('[Video Upload] Starting upload (landing page):', {
+        method: uploadMethod,
+        fileName: uploadMethod === "file" ? selectedFile?.name : undefined,
+        fileSize: uploadMethod === "file" ? selectedFile?.size : undefined,
+        youtubeUrl: uploadMethod === "youtube" ? youtubeUrl : undefined,
+        timestamp: new Date().toISOString(),
+      });
+      
       if (uploadMethod === "file" && selectedFile) {
         response = await uploadVideo(selectedFile, undefined, null);
       } else if (uploadMethod === "youtube" && youtubeUrl) {
@@ -140,6 +150,13 @@ export default function LandingPage() {
       } else {
         throw new Error("Please select a file or enter a YouTube URL");
       }
+
+      console.log('[Video Upload] Upload successful (landing page):', {
+        videoId: response.video_id,
+        uploadMethod,
+        uploadDuration: Date.now() - uploadStartTime,
+        timestamp: new Date().toISOString(),
+      });
 
       // Wait for processing to complete before redirecting
       const { getVideoStatus } = await import("@/lib/api");
@@ -149,24 +166,122 @@ export default function LandingPage() {
         return new Promise((resolve, reject) => {
           const maxAttempts = 300; // 5 minutes max (2 second intervals)
           let attempts = 0;
+          const statusHistory: Array<{ status: string; timestamp: number; duration?: number | null }> = [];
+          let lastStatus: string | null = null;
           
           const checkStatus = async () => {
             try {
               attempts++;
               const statusData = await getVideoStatus(response.video_id);
               
+              // Track status transitions
+              if (statusData.status !== lastStatus) {
+                statusHistory.push({
+                  status: statusData.status,
+                  timestamp: Date.now(),
+                  duration: statusData.duration,
+                });
+                lastStatus = statusData.status;
+                console.log(`[Video Processing] Status transition (landing page): ${statusData.status}`, {
+                  videoId: response.video_id,
+                  attempt: attempts,
+                  elapsedTime: Date.now() - uploadStartTime,
+                  duration: statusData.duration,
+                });
+              }
+              
               if (statusData.status === VideoStatus.DONE) {
+                console.log('[Video Processing] Processing completed successfully (landing page):', {
+                  videoId: response.video_id,
+                  totalAttempts: attempts,
+                  totalTime: Date.now() - uploadStartTime,
+                  duration: statusData.duration,
+                  statusHistory: statusHistory.map(s => `${s.status}@${new Date(s.timestamp).toISOString()}`),
+                  timestamp: new Date().toISOString(),
+                });
                 resolve();
               } else if (statusData.status === VideoStatus.FAILED) {
+                // Analyze why it failed
+                const timeToFailure = Date.now() - uploadStartTime;
+                const lastSuccessfulStatus = statusHistory.length > 1 ? statusHistory[statusHistory.length - 2] : null;
+                const failureAnalysis = {
+                  failedAtStage: lastStatus || 'UNKNOWN',
+                  lastSuccessfulStage: lastSuccessfulStatus?.status || 'UPLOADED',
+                  timeInLastStage: lastSuccessfulStatus ? Date.now() - lastSuccessfulStatus.timestamp : null,
+                  totalProcessingTime: timeToFailure,
+                  statusProgression: statusHistory.map(s => s.status).join(' -> '),
+                  possibleReasons: [] as string[],
+                };
+                
+                // Analyze possible reasons
+                if (lastStatus === VideoStatus.UPLOADED || lastStatus === VideoStatus.QUEUED) {
+                  failureAnalysis.possibleReasons.push('Failed during upload/queuing - check file format, size, or server resources');
+                } else if (lastStatus === VideoStatus.PROCESSING) {
+                  failureAnalysis.possibleReasons.push('Failed during initial processing - check video codec compatibility');
+                } else if (lastStatus === VideoStatus.TRANSCRIBED) {
+                  failureAnalysis.possibleReasons.push('Failed after transcription - check audio quality or transcription service');
+                } else if (lastStatus === VideoStatus.HIGHLIGHTS_FOUND) {
+                  failureAnalysis.possibleReasons.push('Failed after highlights detection - check analysis pipeline');
+                }
+                
+                if (timeToFailure < 10000) {
+                  failureAnalysis.possibleReasons.push('Failed very quickly (<10s) - likely file format or upload issue');
+                } else if (timeToFailure > 600000) {
+                  failureAnalysis.possibleReasons.push('Failed after long processing (>10min) - possible timeout or resource exhaustion');
+                }
+                
+                if (!statusData.duration) {
+                  failureAnalysis.possibleReasons.push('No duration extracted - video file may be corrupted or unsupported format');
+                }
+                
+                console.error('[Video Processing] Processing failed - detailed analysis (landing page):', {
+                  videoId: response.video_id,
+                  uploadMethod,
+                  status: statusData.status,
+                  duration: statusData.duration,
+                  createdAt: statusData.created_at,
+                  totalAttempts: attempts,
+                  totalTime: timeToFailure,
+                  statusData: JSON.stringify(statusData, null, 2),
+                  failureAnalysis,
+                  statusHistory: statusHistory.map(s => ({
+                    status: s.status,
+                    timestamp: new Date(s.timestamp).toISOString(),
+                    duration: s.duration,
+                  })),
+                  timestamp: new Date().toISOString(),
+                });
                 reject(new Error("Video processing failed"));
               } else if (attempts >= maxAttempts) {
+                console.warn('[Video Processing] Timeout reached (landing page):', {
+                  videoId: response.video_id,
+                  uploadMethod,
+                  maxAttempts,
+                  totalTime: Date.now() - uploadStartTime,
+                  timestamp: new Date().toISOString(),
+                });
                 reject(new Error("Processing timeout - video is still processing"));
               } else {
                 // Check again in 2 seconds
                 setTimeout(checkStatus, 2000);
               }
             } catch (err) {
+              console.warn(`[Video Processing] Status check failed (landing page, attempt ${attempts}/${maxAttempts}):`, {
+                videoId: response.video_id,
+                attempt: attempts,
+                error: err instanceof Error ? err.message : String(err),
+                errorStack: err instanceof Error ? err.stack : undefined,
+                timestamp: new Date().toISOString(),
+              });
               if (attempts >= maxAttempts) {
+                console.error('[Video Processing] Max attempts reached (landing page):', {
+                  videoId: response.video_id,
+                  uploadMethod,
+                  totalAttempts: attempts,
+                  totalTime: Date.now() - uploadStartTime,
+                  lastError: err instanceof Error ? err.message : String(err),
+                  timestamp: new Date().toISOString(),
+                });
                 reject(err);
               } else {
                 // Retry on error
@@ -188,6 +303,14 @@ export default function LandingPage() {
       // Redirect once processing is complete
       router.push(`/?video_id=${response.video_id}`);
     } catch (err) {
+      console.error('[Video Upload] Upload failed (landing page):', {
+        uploadMethod,
+        fileName: uploadMethod === "file" ? selectedFile?.name : undefined,
+        youtubeUrl: uploadMethod === "youtube" ? youtubeUrl : undefined,
+        error: err instanceof Error ? err.message : String(err),
+        errorStack: err instanceof Error ? err.stack : undefined,
+        timestamp: new Date().toISOString(),
+      });
       setError(err instanceof Error ? err.message : "Upload failed");
       setLoading(false);
     }
