@@ -20,7 +20,7 @@ const TRACK_HEIGHT = 60;
 const TRACK_LABEL_WIDTH = 128;
 const RULER_HEIGHT = 32;
 
-interface TimelineProps {
+export interface TimelineProps {
   sequences?: Sequence[];
   tracks?: Track[]; // Legacy support
   currentTime: number;
