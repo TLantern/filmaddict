@@ -1437,13 +1437,9 @@ export default function TimelinePage() {
     setSegments(filtered);
   }, [segmentFilter, allSegments, timeline, highlights]);
 
-  // Update sequences when tracks or duration changes
-  useEffect(() => {
-    if (tracks.length > 0 && duration > 0) {
-      const updatedSequence = createSequenceFromTracks(tracks, duration);
-      setSequences([updatedSequence]);
-    }
-  }, [tracks, duration, videoId]);
+  // Note: Sequences are now created directly in loadVideoData
+  // This useEffect was causing duplicate sequence creation and hook ordering issues
+  // Removed to fix React error #310 in production builds
 
   // Reset current index when segments change
   useEffect(() => {
