@@ -678,6 +678,11 @@ function ProcessPageContent() {
                   <h3 className="text-xl font-semibold text-white mb-2">
                     {getStatusMessage(status.status)}
                   </h3>
+                  <div className="mb-3 px-4 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-md inline-block">
+                    <p className="text-sm text-yellow-400">
+                      ⚠️ Processing may take 5-10 minutes. Please wait...
+                    </p>
+                  </div>
                   {status.duration && (
                     <p className="text-sm text-zinc-400">
                       Video duration: {formatTime(status.duration)}

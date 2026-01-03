@@ -113,6 +113,12 @@ export function ExportDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="py-2 px-4 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
+          <p className="text-sm text-yellow-400">
+            ⚠️ Export may take 5-10 minutes. Please wait...
+          </p>
+        </div>
+
         <div className="py-4">
           <label className="text-sm font-medium text-zinc-300 mb-2 block">
             Export Format
