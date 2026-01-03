@@ -1385,12 +1385,15 @@ function TimelineTrack({
         </div>
       )}
       {track.items.map((item) => {
+        // Skip full-length background items (Video/Audio starting at 0) - they should never be marked as cut
+        const isFullLengthItem = item.start === 0 && (item.title === 'Video' || item.title === 'Audio');
+        
         // Check if this item is a removed segment (keep=false in timeline)
         const timelineSegment = timeline?.find(t => 
           Math.abs(t.start - item.start) < 0.01 && 
           Math.abs(t.end - item.end) < 0.01
         );
-        const isCutSegment = timelineSegment ? !timelineSegment.keep : false;
+        const isCutSegment = isFullLengthItem ? false : (timelineSegment ? !timelineSegment.keep : false);
         
         // Highlights are always highlighted (green), but no hover effects
         const isHighlighted = item.isHighlight;
