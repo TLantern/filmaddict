@@ -80,7 +80,7 @@ function computeGapsFromEDL(edl: [number, number][], duration: number): [number,
 export default function TimelinePage() {
   const params = useParams();
   const router = useRouter();
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const videoId = params.videoId as string;
   const playerRef = useRef<VideoPlayerRef>(null);
 
@@ -1601,7 +1601,7 @@ export default function TimelinePage() {
     return result;
   }, [allSegments, highlights, timeline]);
 
-  if (loading) {
+  if (!isLoaded || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black">
         <div className="text-center">
