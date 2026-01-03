@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
-import type { ReactElement } from "react";
 import { Track, TimelineItem, Sequence, SegmentAnalysis } from "@/lib/types";
 import { Button } from "./button-1";
 import { 
@@ -1439,7 +1438,7 @@ export function Timeline({
   selectedItemIds,
   onItemSelect,
   onMoveItem,
-}: TimelineProps): ReactElement {
+}: TimelineProps) {
   // Extract cut points from accepted segments (both start and end of deleted segments)
   const cutPoints = useMemo(() => {
     const points = new Set<number>();
