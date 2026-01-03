@@ -1235,8 +1235,8 @@ export default function TimelinePage() {
     console.log(`Feature coming soon: ${featureName}`);
   }, []);
 
-  // Setup keyboard shortcuts
-  const shortcuts: ShortcutConfig[] = [
+  // Setup keyboard shortcuts - memoize to prevent hook order issues
+  const shortcuts: ShortcutConfig[] = useMemo(() => [
     // Global
     { key: SHORTCUTS.save_project.key, meta: true, handler: () => handleSaveProject() },
     { key: SHORTCUTS.undo.key, meta: true, handler: () => handleUndo() },
@@ -1328,7 +1328,12 @@ export default function TimelinePage() {
     { key: SHORTCUTS.ripple_trim_backward.key, shift: true, handler: () => handleStub('Ripple Trim Backward') },
     { key: SHORTCUTS.nudge_clip_forward.key, alt: true, handler: () => handleStub('Nudge Clip Forward') },
     { key: SHORTCUTS.nudge_clip_backward.key, alt: true, handler: () => handleStub('Nudge Clip Backward') },
-  ];
+  ], [handleSaveProject, handleUndo, handleRedo, handleRevertFeedback, handleCopy, handleCut, handlePaste,
+    handleSelectAll, handleDeselectAll, handleStop, handleStepForward, handleStepBackward, handleJogBackward,
+    handleJogStop, handleJogForward, handleFastForward, handleRewind, handleGoToStart, handleGoToEnd,
+    handleSetInPoint, handleSetOutPoint, handleClearInOut, handleToggleLoop, handleBladeTool, handleSelectTool,
+    handleTrimTool, handleZoomIn, handleZoomOut, handleZoomToFit, handleSnapToggle, handleAddMarker,
+    handleNextMarker, handlePrevMarker, handleDeleteMarker, handleExport, handleStub]);
 
   useKeyboardShortcuts(shortcuts);
 
