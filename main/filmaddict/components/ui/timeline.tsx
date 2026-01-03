@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useMemo, useCallback } from "react";
+import React, { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { Track, TimelineItem, Sequence, SegmentAnalysis } from "@/lib/types";
 import { Button } from "./button-1";
 import { 
@@ -1396,8 +1396,8 @@ function HorizontalScrollbar({
   );
 }
 
-// Main Timeline Component
-export function Timeline({
+// Main Timeline Component  
+function TimelineComponent({
   sequences,
   tracks: legacyTracks,
   currentTime,
@@ -2161,4 +2161,6 @@ export function Timeline({
       </div>
     </div>
   );
-} 
+}
+
+export const Timeline: React.ComponentType<TimelineProps> = TimelineComponent; 
