@@ -106,7 +106,7 @@ function CheckoutFormInner({ clientSecret, customerId, plan, onCancel }: Checkou
           {isLoading ? "Processing..." : `Pay $1 USD`}
         </button>
       </div>
-      <p className="text-center text-gray-400 text-sm">
+      <p className="text-center text-black text-sm">
         3 days for $1, then {plan === "monthly" ? "$10/month" : "$100/year"} starting after trial
       </p>
     </form>

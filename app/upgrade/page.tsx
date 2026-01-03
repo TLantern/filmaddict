@@ -124,7 +124,7 @@ export default function UpgradePage() {
                                 </span>
                             </div>
                           </div>
-                          <div className="text-sm text-gray-600 text-right">
+                          <div className="text-sm text-black text-right">
                             $100 USD yearly
                           </div>
                         </div>
@@ -152,7 +152,7 @@ export default function UpgradePage() {
                               </span>
                             </div>
                             </div>
-                          <div className="text-sm text-gray-600 text-right">
+                          <div className="text-sm text-black text-right">
                             $10 USD monthly
                           </div>
                         </div>
@@ -178,7 +178,7 @@ export default function UpgradePage() {
                     <h2 className="text-2xl font-bold text-black mb-2 text-center">
                       $1 USD for 3 days
                     </h2>
-                    <p className="text-gray-600 text-center mb-6">
+                    <p className="text-black text-center mb-6">
                       Then {selectedPlan === "monthly" ? "$10/month" : "$100/year"} starting after trial
                     </p>
                     <CheckoutForm
