@@ -559,7 +559,7 @@ function ProcessPageContent() {
             <BreadcrumbList className="text-zinc-300">
               <BreadcrumbItem>
                 <BreadcrumbLink asChild>
-                  <Link href="/">
+                  <Link href="/yklipp/">
                     <HomeIcon className="size-4" />
                   </Link>
                 </BreadcrumbLink>
