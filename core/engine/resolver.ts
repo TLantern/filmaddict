@@ -221,3 +221,30 @@ export function getEnabledClips(
   return clips.sort((a, b) => a.start - b.start);
 }
 
+/**
+ * Get all disabled clips sorted by timeline position.
+ * 
+ * @param graph - The timeline graph
+ * @param trackType - Optional filter for track type
+ * @returns Array of disabled clips sorted by start time
+ */
+export function getDisabledClips(
+  graph: TimelineGraph,
+  trackType?: 'video' | 'audio'
+): Clip[] {
+  const tracks = trackType 
+    ? graph.tracks.filter(t => t.type === trackType)
+    : graph.tracks;
+  
+  const clips: Clip[] = [];
+  for (const track of tracks) {
+    for (const clip of track.clips) {
+      if (!clip.enabled) {
+        clips.push(clip);
+      }
+    }
+  }
+  
+  return clips.sort((a, b) => a.start - b.start);
+}
+

@@ -13,7 +13,7 @@ import {
   EDL,
   Gaps,
 } from './types';
-import { resolve, findNextEnabledClip, findPrevEnabledClip, getClipEnd, getEnabledClips } from './resolver';
+import { resolve, findNextEnabledClip, findPrevEnabledClip, getClipEnd, getEnabledClips, getDisabledClips } from './resolver';
 import { applyMutation } from './mutations';
 
 /**
@@ -113,39 +113,14 @@ export class TimelineEngine {
   /**
    * Compute gaps (removed regions) from the timeline.
    * Returns array of [start, end] tuples for disabled/gap regions.
+   * Gaps only represent segments that have been explicitly disabled (keep: false),
+   * not the inverse of enabled clips.
    */
   toGaps(): Gaps {
-    const edl = this.toEDL();
-    const duration = this.graph.duration;
+    const disabledClips = getDisabledClips(this.graph, 'video');
     
-    if (edl.length === 0) {
-      return duration > 0 ? [[0, duration]] : [];
-    }
-    
-    const sorted = [...edl].sort((a, b) => a[0] - b[0]);
-    const gaps: Gaps = [];
-    
-    // Gap before first segment
-    if (sorted[0][0] > 0) {
-      gaps.push([0, sorted[0][0]]);
-    }
-    
-    // Gaps between segments
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const gapStart = sorted[i][1];
-      const gapEnd = sorted[i + 1][0];
-      if (gapEnd > gapStart) {
-        gaps.push([gapStart, gapEnd]);
-      }
-    }
-    
-    // Gap after last segment
-    const lastEnd = sorted[sorted.length - 1][1];
-    if (lastEnd < duration) {
-      gaps.push([lastEnd, duration]);
-    }
-    
-    return gaps;
+    // Return gaps as time ranges [start, end] for each disabled clip
+    return disabledClips.map(clip => [clip.start, getClipEnd(clip)] as [number, number]);
   }
 
   // ============================================================================
