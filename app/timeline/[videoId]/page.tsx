@@ -78,9 +78,15 @@ function computeGapsFromEDL(edl: [number, number][], duration: number): [number,
 }
 
 export default function TimelinePage() {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TimelinePage:80',message:'Component render started',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
   const params = useParams();
   const router = useRouter();
   const { user, isLoaded } = useUser();
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TimelinePage:83',message:'useUser hook result',data:{isLoaded,hasUser:!!user},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   const videoId = params.videoId as string;
   const playerRef = useRef<VideoPlayerRef>(null);
 
@@ -1235,7 +1241,36 @@ export default function TimelinePage() {
     console.log(`Feature coming soon: ${featureName}`);
   }, []);
 
+  // Count segments by label, using timeline keep state
+  const segmentCounts: Record<"FLUFF" | "HIGHLIGHTS", number> = useMemo(() => {
+    const fluffCount = allSegments.filter((s: SegmentAnalysis) => {
+      if (s.label !== "FLUFF") return false;
+      const timelineSegment = timeline.find(t => 
+        Math.abs(t.start - s.start_time) < 0.01 && 
+        Math.abs(t.end - s.end_time) < 0.01
+      );
+      return !timelineSegment || timelineSegment.keep;
+    }).length;
+    
+    const highlightsCount = highlights.filter((h: Highlight) => {
+      const timelineSegment = timeline.find(t => 
+        Math.abs(t.start - h.start) < 0.01 && 
+        Math.abs(t.end - h.end) < 0.01
+      );
+      return !timelineSegment || timelineSegment.keep;
+    }).length;
+    
+    const result = {
+      FLUFF: fluffCount,
+      HIGHLIGHTS: highlightsCount,
+    };
+    return result;
+  }, [allSegments, highlights, timeline]);
+
   // Setup keyboard shortcuts - memoize to prevent hook order issues
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TimelinePage:1239',message:'Before shortcuts useMemo',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
   const shortcuts: ShortcutConfig[] = useMemo(() => [
     // Global
     { key: SHORTCUTS.save_project.key, meta: true, handler: () => handleSaveProject() },
@@ -1334,6 +1369,9 @@ export default function TimelinePage() {
     handleSetInPoint, handleSetOutPoint, handleClearInOut, handleToggleLoop, handleBladeTool, handleSelectTool,
     handleTrimTool, handleZoomIn, handleZoomOut, handleZoomToFit, handleSnapToggle, handleAddMarker,
     handleNextMarker, handlePrevMarker, handleDeleteMarker, handleExport, handleStub]);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TimelinePage:1345',message:'After shortcuts useMemo',data:{shortcutsLength:shortcuts?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
 
   useKeyboardShortcuts(shortcuts);
 
@@ -1575,33 +1613,13 @@ export default function TimelinePage() {
     return () => window.removeEventListener("keydown", handleSegmentNav);
   }, [currentSegmentIndex, segments.length]);
 
-  // Count segments by label, using timeline keep state
-  const segmentCounts: Record<"FLUFF" | "HIGHLIGHTS", number> = useMemo(() => {
-    const fluffCount = allSegments.filter((s: SegmentAnalysis) => {
-      if (s.label !== "FLUFF") return false;
-      const timelineSegment = timeline.find(t => 
-        Math.abs(t.start - s.start_time) < 0.01 && 
-        Math.abs(t.end - s.end_time) < 0.01
-      );
-      return !timelineSegment || timelineSegment.keep;
-    }).length;
-    
-    const highlightsCount = highlights.filter((h: Highlight) => {
-      const timelineSegment = timeline.find(t => 
-        Math.abs(t.start - h.start) < 0.01 && 
-        Math.abs(t.end - h.end) < 0.01
-      );
-      return !timelineSegment || timelineSegment.keep;
-    }).length;
-    
-    const result = {
-      FLUFF: fluffCount,
-      HIGHLIGHTS: highlightsCount,
-    };
-    return result;
-  }, [allSegments, highlights, timeline]);
-
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TimelinePage:1604',message:'Before early return check',data:{isLoaded,loading,error:!!error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   if (!isLoaded || loading) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TimelinePage:1605',message:'Early return: loading',data:{isLoaded,loading},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     return (
       <div className="flex min-h-screen items-center justify-center bg-black">
         <div className="text-center">
@@ -1613,6 +1631,9 @@ export default function TimelinePage() {
   }
 
   if (error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TimelinePage:1615',message:'Early return: error',data:{error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     return (
       <div className="flex min-h-screen items-center justify-center bg-black">
         <div className="text-center max-w-md">
