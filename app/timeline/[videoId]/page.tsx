@@ -163,9 +163,6 @@ export default function TimelinePage() {
 
   const gaps = useMemo<Gaps>(() => {
     const computedGaps = engineRef.current?.toGaps() || [];
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:gaps:computed',message:'gaps computed',data:{gapsCount:computedGaps.length,gaps:computedGaps.map(g=>[g[0],g[1]]),hasEngineSnapshot:!!engineRef.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     if (computedGaps.length > 0) {
       console.log('[gaps] Computed gaps:', computedGaps.map(g => `${g[0].toFixed(2)}-${g[1].toFixed(2)}`));
     }
@@ -183,24 +180,15 @@ export default function TimelinePage() {
 
   // Toggle segment keep state via engine mutation
   const toggleSegmentKeep = useCallback((id: string) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:toggleSegmentKeep:entry',message:'toggleSegmentKeep called',data:{id,hasEngine:!!engineRef.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     if (!engineRef.current) return;
     
     // Log the segment being toggled for debugging
     const clip = engineRef.current.findClipById(id);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:toggleSegmentKeep:clipFound',message:'clip lookup result',data:{id,clipFound:!!clip,clipEnabled:clip?.enabled,clipStart:clip?.start,clipIn:clip?.in,clipOut:clip?.out},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C'})}).catch(()=>{});
-    // #endregion
     if (clip && clip.enabled) {
       console.log('[toggleSegmentKeep] Disabling:', { start: clip.start, end: clip.start + (clip.out - clip.in) });
       
       // Move playhead to end of the deleted segment
       const clipEnd = clip.start + (clip.out - clip.in);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:toggleSegmentKeep:seekingPlayhead',message:'seeking playhead to clipEnd',data:{clipEnd,hasPlayerRef:!!playerRef.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       if (playerRef.current) {
         playerRef.current.seek(clipEnd);
       }
@@ -208,23 +196,14 @@ export default function TimelinePage() {
     
     // Dispatch mutation to engine
     engineRef.current.mutate({ type: 'TOGGLE_CLIP', clipId: id });
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:toggleSegmentKeep:afterMutate',message:'mutation dispatched',data:{id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
   }, []);
 
   // Disable all FLUFF segments immediately
   const handleImplementAllFluff = useCallback(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleImplementAllFluff:entry',message:'handleImplementAllFluff called',data:{hasEngine:!!engineRef.current,allSegmentsLength:allSegments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
     if (!engineRef.current) return;
     
     // Find all FLUFF segments that are currently enabled
     const fluffSegments = allSegments.filter((seg: SegmentAnalysis) => seg.label === "FLUFF");
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleImplementAllFluff:fluffSegments',message:'fluff segments found',data:{fluffSegmentsCount:fluffSegments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     const mutations: Array<{ type: 'DISABLE_CLIP'; clipId: string }> = [];
     
     fluffSegments.forEach((segment: SegmentAnalysis) => {
@@ -243,9 +222,6 @@ export default function TimelinePage() {
       }
     });
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleImplementAllFluff:mutations',message:'mutations prepared',data:{mutationsCount:mutations.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     if (mutations.length > 0) {
       // Apply all mutations in a single batch
       engineRef.current.mutate({ type: 'BATCH', mutations });
@@ -628,9 +604,6 @@ export default function TimelinePage() {
 
   // Toggle current segment's keep state (instant, no backend)
   const handleAcceptSegment = useCallback(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleAcceptSegment:entry',message:'handleAcceptSegment called',data:{currentSegmentIndex,segmentsLength:segments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     console.log('[handleAcceptSegment] called, currentSegmentIndex:', currentSegmentIndex, 'segments.length:', segments.length);
     if (currentSegmentIndex < 0 || currentSegmentIndex >= segments.length) return;
     
@@ -644,9 +617,6 @@ export default function TimelinePage() {
       Math.abs(t.end - segment.end_time) < 0.01
     );
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleAcceptSegment:timelineMatch',message:'timeline segment lookup',data:{segmentId,segmentStart:segment.start_time,segmentEnd:segment.end_time,timelineFound:!!timelineSegment,timelineId:timelineSegment?.id,timelineKeep:timelineSegment?.keep},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-    // #endregion
     console.log('[handleAcceptSegment] timelineSegment found:', timelineSegment ? { id: timelineSegment.id, keep: timelineSegment.keep } : null);
     
     if (timelineSegment) {
@@ -1602,9 +1572,6 @@ export default function TimelinePage() {
 
   // Count segments by label, using timeline keep state
   const segmentCounts: Record<"FLUFF" | "HIGHLIGHTS", number> = useMemo(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:segmentCounts:entry',message:'segmentCounts computation started',data:{allSegmentsLength:allSegments.length,highlightsLength:highlights.length,timelineLength:timeline.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch(()=>{});
-    // #endregion
     const fluffCount = allSegments.filter((s: SegmentAnalysis) => {
       if (s.label !== "FLUFF") return false;
       const timelineSegment = timeline.find(t => 
@@ -1626,9 +1593,6 @@ export default function TimelinePage() {
       FLUFF: fluffCount,
       HIGHLIGHTS: highlightsCount,
     };
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:segmentCounts:result',message:'segmentCounts computed',data:{fluffCount,highlightsCount,result},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch(()=>{});
-    // #endregion
     return result;
   }, [allSegments, highlights, timeline]);
 
@@ -1655,11 +1619,6 @@ export default function TimelinePage() {
       </div>
     );
   }
-
-  // #region agent log
-  console.log('[DEBUG] TimelinePage render:', { segmentsLength: segments.length, currentSegment: !!currentSegment, segmentCounts, allSegmentsLength: allSegments.length });
-  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:TimelinePage:render',message:'TimelinePage rendering',data:{segmentsLength:segments.length,hasCurrentSegment:!!currentSegment,segmentCounts,allSegmentsLength:allSegments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch((err) => console.error('[DEBUG] Log fetch failed:', err));
-  // #endregion
 
   return (
     <TooltipProvider>
@@ -1812,22 +1771,9 @@ export default function TimelinePage() {
               />
             )}
             {/* Segment Review Panel */}
-            {(() => {
-              // #region agent log
-              console.log('[DEBUG] SegmentReviewPanel check:', { segmentsLength: segments.length, hasCurrentSegment: !!currentSegment, segmentCounts, segmentCountsFluff: segmentCounts?.FLUFF });
-              fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:SegmentReviewPanel:check',message:'checking if segment review panel should render',data:{segmentsLength:segments.length,hasCurrentSegment:!!currentSegment,segmentCounts,segmentCountsFluff:segmentCounts?.FLUFF},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch((err) => console.error('[DEBUG] Log fetch failed:', err));
-              // #endregion
-              return segments.length > 0;
-            })() && (
+            {segments.length > 0 && (
               <div className="relative flex items-center gap-4 px-4 py-3 border-t border-zinc-800 bg-zinc-900 flex-shrink-0">
-                {(() => {
-                  // #region agent log
-                  const hasCurrentSegment = !!currentSegment;
-                  console.error('[DEBUG] ButtonContainer render check:', { hasCurrentSegment, currentSegmentId: currentSegment?.id, segmentsLength: segments.length });
-                  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:ButtonContainer:renderCheck',message:'checking if button container renders',data:{hasCurrentSegment,currentSegmentId:currentSegment?.id,segmentsLength:segments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D,E'})}).catch((e)=>console.error('[DEBUG] Log fetch failed:', e));
-                  // #endregion
-                  return hasCurrentSegment;
-                })() && (
+                {currentSegment && (
                   <>
                     <div className="flex flex-col items-center gap-1 px-2 sm:px-4">
                       <span className="text-xs text-zinc-400 uppercase tracking-wide">clip feedback</span>
@@ -1929,54 +1875,17 @@ export default function TimelinePage() {
                     </div>
 
                     <div className="flex items-center gap-2 ml-[-20px]">
-                      {/* TEST: Always visible debug marker */}
-                      <div style={{backgroundColor: 'yellow', padding: '2px 4px', fontSize: '10px'}}>TEST</div>
-                      {/* #region agent log */}
-                      {(() => {
-                        console.error('[DEBUG] ===== ImplementAllButton IIFE STARTING =====');
-                        const hasHandler = typeof handleImplementAllFluff === 'function';
-                        const handlerType = typeof handleImplementAllFluff;
-                        const hasCurrentSegment = !!currentSegment;
-                        console.error('[DEBUG] ImplementAllButton render check:', { hasHandler, handlerType, hasCurrentSegment, segmentsLength: segments.length });
-                        fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:ImplementAllButton:renderCheck',message:'checking button render conditions',data:{hasHandler,handlerType,hasCurrentSegment,segmentsLength:segments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch((e)=>console.error('[DEBUG] Log fetch failed:', e));
-                        // #endregion
-                        if (!hasHandler) {
-                          // #region agent log
-                          console.error('[DEBUG] ImplementAllButton: handler missing!', { handlerType });
-                          fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:ImplementAllButton:handlerMissing',message:'handleImplementAllFluff is not a function',data:{handlerType},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch((e)=>console.error('[DEBUG] Log fetch failed:', e));
-                          // #endregion
-                          return <div style={{color: 'red', padding: '4px', border: '1px solid red', backgroundColor: 'yellow'}}>NO HANDLER: {String(handlerType)}</div>;
-                        }
-                        // #region agent log
-                        console.error('[DEBUG] ImplementAllButton: RENDERING BUTTON - handler exists');
-                        fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:ImplementAllButton:rendering',message:'rendering ImplementAll button',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch((e)=>console.error('[DEBUG] Log fetch failed:', e));
-                        // #endregion
-                        try {
-                          return (
-                            <Button
-                              onClick={handleImplementAllFluff}
-                              variant="mono"
-                              size="md"
-                              title="Grey out all FLUFF segments"
-                              className="!bg-[#2563EB] hover:!bg-[#1D4ED8] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
-                            >
-                              Implement All
-                            </Button>
-                          );
-                        } catch (e) {
-                          console.error('[DEBUG] ImplementAllButton: ERROR rendering button', e);
-                          return <div style={{color: 'red', padding: '4px'}}>RENDER ERROR: {String(e)}</div>;
-                        }
-                      })()}
-                      {/* #endregion */}
                       <Button
-                        onClick={() => {
-                          // #region agent log
-                          console.log('[DEBUG] Delete button clicked!', { currentSegmentIndex, segmentsLength: segments.length });
-                          fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:DeleteButton:clicked',message:'Delete button clicked',data:{currentSegmentIndex,segmentsLength:segments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'CLICK'})}).catch(()=>{});
-                          // #endregion
-                          handleAcceptSegment();
-                        }}
+                        onClick={handleImplementAllFluff}
+                        variant="mono"
+                        size="md"
+                        title="Grey out all FLUFF segments"
+                        className="!bg-[#2563EB] hover:!bg-[#1D4ED8] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
+                      >
+                        Implement All
+                      </Button>
+                      <Button
+                        onClick={handleAcceptSegment}
                         variant="primary"
                         size="md"
                         className="!bg-[#DC2626] hover:!bg-[#B91C1C] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
