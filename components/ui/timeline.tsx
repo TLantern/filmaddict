@@ -27,7 +27,7 @@ const TRACK_HEIGHT = 60;
 const TRACK_LABEL_WIDTH = 128;
 const RULER_HEIGHT = 32;
 
-interface TimelineProps {
+export interface TimelineProps {
   sequences?: Sequence[];
   tracks?: Track[]; // Legacy support
   currentTime: number;
@@ -77,6 +77,8 @@ interface TimelineProps {
   videoId?: string;
   // Gaps (removed segments) to show as cut regions on tracks
   gaps?: [number, number][];
+  // Accepted segments (Set of segment keys like "start-end")
+  acceptedSegments?: Set<string>;
   // Sequence modification callbacks
   onSplitClip?: (sequenceId: string, trackId: string, itemId: string, splitTime: number) => void;
   onTrimClip?: (sequenceId: string, trackId: string, itemId: string, newStart: number, newEnd: number) => void;
@@ -1673,6 +1675,7 @@ export function Timeline({
   videoUrl,
   videoId,
   gaps,
+  acceptedSegments,
   onSplitClip,
   onTrimClip,
   selectedItemIds,
