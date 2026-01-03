@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
     "https://07e6ab8c442b.ngrok-free.app",
     
   ],
+  // Enable source maps in production to get better error messages
+  productionBrowserSourceMaps: true,
 };
 
 export default nextConfig;
