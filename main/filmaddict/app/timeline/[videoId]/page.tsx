@@ -17,7 +17,7 @@ import {
 } from "@/lib/api";
 import { Highlight, MomentResponse, Track, TimelineItem, Sequence, SegmentAnalysis } from "@/lib/types";
 import { VideoPlayer, VideoPlayerRef } from "@/components/ui/video-player";
-import { Timeline, type TimelineProps } from "@/components/ui/timeline";
+import { Timeline } from "@/components/ui/timeline";
 import { Button } from "@/components/ui/button-1";
 import {
   Tooltip,
