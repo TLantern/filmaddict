@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useMemo, useCallback } from "react";
+import { useRef, useEffect, useState, useMemo, useCallback, FC } from "react";
 import { Track, TimelineItem, Sequence, SegmentAnalysis } from "@/lib/types";
 import { Button } from "./button-1";
 import { 
@@ -1397,7 +1397,7 @@ function HorizontalScrollbar({
 }
 
 // Main Timeline Component
-export function Timeline({
+export const Timeline: FC<TimelineProps> = ({
   sequences,
   tracks: legacyTracks,
   currentTime,
@@ -1438,7 +1438,7 @@ export function Timeline({
   selectedItemIds,
   onItemSelect,
   onMoveItem,
-}: TimelineProps) {
+}) => {
   // Extract cut points from accepted segments (both start and end of deleted segments)
   const cutPoints = useMemo(() => {
     const points = new Set<number>();
@@ -2161,4 +2161,4 @@ export function Timeline({
       </div>
     </div>
   );
-}
+};
