@@ -2163,6 +2163,3 @@ export function Timeline({
     </div>
   );
 }
-
-// Explicitly export the type for better TypeScript resolution
-export type { TimelineProps };
