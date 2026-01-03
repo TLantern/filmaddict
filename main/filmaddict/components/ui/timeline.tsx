@@ -50,8 +50,8 @@ interface TimelineProps {
   canRedo?: boolean;
   isMac?: boolean;
   // Filter props
-  segmentFilter?: "FLUFF" | "HIGHLIGHTS";
-  onSegmentFilterChange?: (filter: "FLUFF" | "HIGHLIGHTS") => void;
+  segmentFilter?: "FLUFF" | "HIGHLIGHTS" | "ALL";
+  onSegmentFilterChange?: (filter: "FLUFF" | "HIGHLIGHTS" | "ALL") => void;
   segmentCounts?: Record<"FLUFF" | "HIGHLIGHTS", number>;
   // Playback rate
   onPlaybackRateChange?: (rate: number) => void;
@@ -178,8 +178,8 @@ function ToolbarButtons({
   canUndo?: boolean;
   canRedo?: boolean;
   isMac?: boolean;
-  segmentFilter?: "FLUFF" | "HIGHLIGHTS";
-  onSegmentFilterChange?: (filter: "FLUFF" | "HIGHLIGHTS") => void;
+  segmentFilter?: "FLUFF" | "HIGHLIGHTS" | "ALL";
+  onSegmentFilterChange?: (filter: "FLUFF" | "HIGHLIGHTS" | "ALL") => void;
   segmentCounts?: Record<"FLUFF" | "HIGHLIGHTS", number>;
 }) {
   return (
@@ -378,6 +378,16 @@ function ToolbarButtons({
           <div className="w-px h-6 bg-zinc-700 mx-1" />
           <div className="flex items-center gap-2">
             <span className="text-sm text-zinc-400">Filter:</span>
+            <button
+              onClick={() => onSegmentFilterChange("ALL")}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                segmentFilter === "ALL"
+                  ? "bg-transparent border border-white text-white"
+                  : "bg-white text-zinc-900 border border-white"
+              }`}
+            >
+              ALL
+            </button>
             <button
               onClick={() => onSegmentFilterChange("FLUFF")}
               className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${

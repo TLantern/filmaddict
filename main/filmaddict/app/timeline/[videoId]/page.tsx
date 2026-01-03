@@ -68,7 +68,7 @@ export default function TimelinePage() {
   const [duration, setDuration] = useState(0);
   const [videoUrl, setVideoUrl] = useState<string>("");
   const [isPlaying, setIsPlaying] = useState(false);
-  const [segmentFilter, setSegmentFilter] = useState<"FLUFF" | "HIGHLIGHTS">("FLUFF");
+  const [segmentFilter, setSegmentFilter] = useState<"FLUFF" | "HIGHLIGHTS" | "ALL">("ALL");
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState<number>(0);
   const [acceptedSegments, setAcceptedSegments] = useState<Set<string>>(new Set());
   const [keptSegments, setKeptSegments] = useState<Set<string>>(new Set());
@@ -1407,9 +1407,26 @@ export default function TimelinePage() {
         usefulness_score: highlight.score,
         explanation: highlight.explanation,
       }));
-    } else {
+    } else if (segmentFilter === "FLUFF") {
       // Filter by segment label
       filtered = allSegments.filter(segment => segment.label === segmentFilter);
+    } else {
+      // Show both FLUFF and HIGHLIGHTS
+      const fluffSegments = allSegments.filter(segment => segment.label === "FLUFF");
+      const highlightSegments = highlights.map((highlight, index) => ({
+        id: `highlight-${index}`,
+        start_time: highlight.start,
+        end_time: highlight.end,
+        label: "HIGHLIGHTS" as const,
+        rating: highlight.score,
+        reason: highlight.summary || highlight.title || "Highlight",
+        repetition_score: 0,
+        filler_density: 0,
+        visual_change_score: 0,
+        usefulness_score: highlight.score,
+        explanation: highlight.explanation,
+      }));
+      filtered = [...fluffSegments, ...highlightSegments];
     }
     
     // Remove accepted segments (they're marked for removal)
@@ -2013,7 +2030,7 @@ export default function TimelinePage() {
             canRedo={canRedo}
             isMac={isMac}
             segmentFilter={segmentFilter}
-            onSegmentFilterChange={(filter: "FLUFF" | "HIGHLIGHTS") => {
+            onSegmentFilterChange={(filter: "FLUFF" | "HIGHLIGHTS" | "ALL") => {
               setSegmentFilter(filter);
               setCurrentSegmentIndex(0);
             }}
