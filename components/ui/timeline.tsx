@@ -833,6 +833,7 @@ function TimelineItemComponent({
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [opacity, setOpacity] = useState(1);
+  const [isDownloading, setIsDownloading] = useState(false);
   const dragStartRef = useRef<{ startX: number; itemStart: number; itemEnd: number } | null>(null);
   const itemRef = useRef<HTMLDivElement>(null);
   
@@ -978,8 +979,6 @@ function TimelineItemComponent({
   const borderTopRightRadius = (hasCutAtEnd || shouldCurveRight) ? curvedRadius : baseRadius;
   const borderBottomLeftRadius = borderTopLeftRadius;
   const borderBottomRightRadius = borderTopRightRadius;
-
-  const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownloadHighlight = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
