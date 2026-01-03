@@ -51,6 +51,9 @@ export default function TimelinePage() {
   const { user } = useUser();
   const videoId = params.videoId as string;
   const playerRef = useRef<VideoPlayerRef>(null);
+  // Track last seek time to prevent seek loops in gap-skipping
+  const lastSeekTimeRef = useRef<number>(0);
+  const lastSeekGapRef = useRef<string>('');
 
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [moments, setMoments] = useState<MomentResponse[]>([]);
@@ -68,6 +71,7 @@ export default function TimelinePage() {
   const [segmentFilter, setSegmentFilter] = useState<"FLUFF" | "HIGHLIGHTS">("FLUFF");
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState<number>(0);
   const [acceptedSegments, setAcceptedSegments] = useState<Set<string>>(new Set());
+  const [keptSegments, setKeptSegments] = useState<Set<string>>(new Set());
   const [pendingCutsCount, setPendingCutsCount] = useState(0);
   const [cutting, setCutting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -101,6 +105,20 @@ export default function TimelinePage() {
   
   const canUndo = historyIndex >= 0;
   const canRedo = historyIndex < history.length - 1;
+
+  // Compute gaps (cut regions) from acceptedSegments for timeline display and playback skipping
+  const gaps = useMemo<[number, number][]>(() => {
+    const gapsArray: [number, number][] = [];
+    acceptedSegments.forEach((segmentKey) => {
+      const [start, end] = segmentKey.split('-').map(Number);
+      if (!isNaN(start) && !isNaN(end) && end > start) {
+        gapsArray.push([start, end]);
+      }
+    });
+    // Sort gaps by start time
+    gapsArray.sort((a, b) => a[0] - b[0]);
+    return gapsArray;
+  }, [acceptedSegments]);
 
   useEffect(() => {
     if (videoId) {
@@ -388,15 +406,54 @@ export default function TimelinePage() {
     };
   };
 
-  const handleSeek = (time: number) => {
+  const handleSeek = useCallback((time: number) => {
     if (playerRef.current) {
-      playerRef.current.seek(time);
+      let seekTime = time;
+      
+      // Check if seek time is in a gap - if so, skip to end of gap
+      if (gaps.length > 0) {
+        for (const [gapStart, gapEnd] of gaps) {
+          if (seekTime >= gapStart && seekTime < gapEnd) {
+            // Seek to end of gap instead (with larger buffer)
+            seekTime = gapEnd + 0.1; // 100ms buffer to ensure we're past it
+            break;
+          }
+        }
+      }
+      
+      playerRef.current.seek(seekTime);
     }
-  };
+  }, [gaps]);
 
-  const handleTimeUpdate = (time: number) => {
+  const handleTimeUpdate = useCallback((time: number) => {
+    // Gap-skipping: if current time is in a gap, skip to end of gap
+    if (gaps.length > 0 && playerRef.current) {
+      for (const [gapStart, gapEndTime] of gaps) {
+        const gapKey = `${gapStart}-${gapEndTime}`;
+        // Check if we're in the gap (strict check, no epsilon on upper bound)
+        if (time >= gapStart && time < gapEndTime) {
+          // Prevent seek loops - if we just sought to this gap, skip this update
+          if (lastSeekGapRef.current === gapKey && Math.abs(time - lastSeekTimeRef.current) < 0.5) {
+            // Still in gap after seek - wait a bit longer
+            return;
+          }
+          
+          // We're in a gap - skip to well past the end to ensure we're out
+          const skipTo = gapEndTime + 0.1; // Skip 100ms past the end
+          lastSeekTimeRef.current = skipTo;
+          lastSeekGapRef.current = gapKey;
+          playerRef.current.seek(skipTo);
+          // Don't update state - let the next timeUpdate handle it after seek
+          return;
+        }
+      }
+      // Clear seek tracking if we're not in any gap
+      if (lastSeekGapRef.current) {
+        lastSeekGapRef.current = '';
+      }
+    }
     setCurrentTime(time);
-  };
+  }, [gaps]);
 
   const handleDurationChange = (dur: number) => {
     if (dur > 0) {
@@ -452,43 +509,42 @@ export default function TimelinePage() {
 
   const handleAcceptSegment = async () => {
     if (currentSegmentIndex < 0 || currentSegmentIndex >= segments.length) return;
-    if (cutting) return; // Prevent multiple simultaneous cuts
     
     const segment = segments[currentSegmentIndex];
     const segmentKey = `${segment.start_time}-${segment.end_time}`;
     
-    try {
-      setCutting(true);
-      
-      // Store pending cut on server (generates local preview in background)
-      const result = await storePendingCuts(videoId, [
-        { start_time: segment.start_time, end_time: segment.end_time },
-      ]);
-      
-      // Update local state immediately
-      setAcceptedSegments(prev => new Set([...prev, segmentKey]));
-      setPendingCutsCount(result.total_pending);
-      
-      // Process full video in background (non-blocking)
-      // This replaces the S3 version but doesn't block the UI
-      saveVideoCuts(videoId).catch(err => {
-        console.error("Background video processing error (non-critical):", err);
-        // Don't show error to user - preview is already available
-      });
-      
-      // Auto-advance to next segment
-      if (currentSegmentIndex < segments.length - 1) {
-        navigateToSegment(currentSegmentIndex + 1);
-      } else {
-        navigateToSegment(0);
-      }
-    } catch (err) {
-      console.error("Error deleting segment:", err);
-      setError(err instanceof Error ? err.message : "Failed to delete segment");
-    } finally {
-      setCutting(false);
+    // Update local state immediately - NO backend call to avoid video corruption
+    // Backend sync happens on export only
+    setAcceptedSegments(prev => new Set([...prev, segmentKey]));
+    setPendingCutsCount(prev => prev + 1);
+    
+    // Move playhead to end of deleted segment
+    if (playerRef.current) {
+      playerRef.current.seek(segment.end_time);
     }
   };
+
+  const handleImplementAllFluff = useCallback(() => {
+    // Find all FLUFF segments that aren't already accepted
+    const fluffSegments = allSegments.filter(s => {
+      if (s.label !== "FLUFF") return false;
+      const segmentKey = `${s.start_time}-${s.end_time}`;
+      return !acceptedSegments.has(segmentKey);
+    });
+    
+    if (fluffSegments.length === 0) return;
+    
+    // Add all FLUFF segments to accepted segments
+    const newSegmentKeys = fluffSegments.map(s => `${s.start_time}-${s.end_time}`);
+    setAcceptedSegments(prev => new Set([...prev, ...newSegmentKeys]));
+    setPendingCutsCount(prev => prev + fluffSegments.length);
+    
+    // Move playhead to end of last FLUFF segment
+    if (fluffSegments.length > 0 && playerRef.current) {
+      const lastSegment = fluffSegments[fluffSegments.length - 1];
+      playerRef.current.seek(lastSegment.end_time);
+    }
+  }, [allSegments, acceptedSegments]);
 
   const handleAutoSave = useCallback(async () => {
     if (acceptedSegments.size === 0) return;
@@ -562,7 +618,15 @@ export default function TimelinePage() {
   };
 
   const handleDeclineSegment = () => {
-    // Just advance to next segment without accepting
+    if (currentSegmentIndex < 0 || currentSegmentIndex >= segments.length) return;
+    
+    const segment = segments[currentSegmentIndex];
+    const segmentKey = `${segment.start_time}-${segment.end_time}`;
+    
+    // Add segment to kept segments (removes from fluff list and removes highlight)
+    setKeptSegments(prev => new Set([...prev, segmentKey]));
+    
+    // Advance to next segment
     if (currentSegmentIndex < segments.length - 1) {
       navigateToSegment(currentSegmentIndex + 1);
     } else {
@@ -1079,10 +1143,11 @@ export default function TimelinePage() {
   }, []);
 
   const handleSaveProject = useCallback(async () => {
-    // Save session state to backend
+    // Save session state to backend including sequences
     await saveEditingSession(videoId, {
       markers,
       selections,
+      sequences,
       currentTime,
       inPoint,
       outPoint,
@@ -1099,7 +1164,7 @@ export default function TimelinePage() {
     }
     
     console.log('Project saved');
-  }, [videoId, markers, selections, currentTime, inPoint, outPoint, projectName, snapEnabled, loopPlayback, pendingCutsCount, saving, handleSaveCuts, user?.id]);
+  }, [videoId, markers, selections, sequences, currentTime, inPoint, outPoint, projectName, snapEnabled, loopPlayback, pendingCutsCount, saving, handleSaveCuts, user?.id]);
 
   const handleCopy = useCallback(() => {
     console.log('Copy - coming soon');
@@ -1131,13 +1196,60 @@ export default function TimelinePage() {
     try {
       setError(null);
       
-      // Get pending cuts if any
-      const segmentsToRemove = acceptedSegments.size > 0
-        ? Array.from(acceptedSegments).map(key => {
-            const [start, end] = key.split('-').map(Number);
-            return { start_time: start, end_time: end };
-          })
-        : undefined;
+      // Compute segments to remove from acceptedSegments and sequences
+      // First, collect all items that should be kept from sequences (visible, non-muted items)
+      const keepSegments: Array<[number, number]> = [];
+      if (sequences.length > 0) {
+        const activeSequence = sequences.find(seq => seq.id === activeSequenceId) || sequences[0];
+        if (activeSequence) {
+          // Collect all visible, non-muted items from video tracks
+          activeSequence.videoTracks.forEach(track => {
+            if (track.visible && !track.muted) {
+              track.items.forEach(item => {
+                // Skip full-length items (they're placeholders)
+                if (!item.id.includes('full-') && item.end > item.start) {
+                  keepSegments.push([item.start, item.end]);
+                }
+              });
+            }
+          });
+        }
+      }
+      
+      // If we have keep segments from sequences, compute segments to remove
+      let segmentsToRemove: Array<{ start_time: number; end_time: number }> | undefined;
+      
+      if (keepSegments.length > 0) {
+        // Sort keep segments by start time
+        keepSegments.sort((a, b) => a[0] - b[0]);
+        
+        // Compute segments to remove (inverse of keep segments)
+        const removeSegments: Array<[number, number]> = [];
+        let currentTime = 0;
+        
+        for (const [start, end] of keepSegments) {
+          if (currentTime < start) {
+            removeSegments.push([currentTime, start]);
+          }
+          currentTime = Math.max(currentTime, end);
+        }
+        
+        // Add remaining segment if any
+        if (currentTime < duration) {
+          removeSegments.push([currentTime, duration]);
+        }
+        
+        segmentsToRemove = removeSegments.map(([start, end]) => ({
+          start_time: start,
+          end_time: end,
+        }));
+      } else if (acceptedSegments.size > 0) {
+        // Fallback to acceptedSegments if no sequences
+        segmentsToRemove = Array.from(acceptedSegments).map(key => {
+          const [start, end] = key.split('-').map(Number);
+          return { start_time: start, end_time: end };
+        });
+      }
       
       // Export the video
       const blob = await exportVideo(videoId, format, segmentsToRemove);
@@ -1168,7 +1280,7 @@ export default function TimelinePage() {
       setError(err instanceof Error ? err.message : "Failed to export video");
       throw err;
     }
-  }, [videoId, acceptedSegments]);
+  }, [videoId, acceptedSegments, sequences, activeSequenceId, duration]);
 
   // Stub handlers for features not yet implemented
   const handleStub = useCallback((featureName: string) => {
@@ -1306,8 +1418,14 @@ export default function TimelinePage() {
       return !acceptedSegments.has(segmentKey);
     });
     
+    // Remove kept segments (they're removed from fluff list)
+    filtered = filtered.filter(segment => {
+      const segmentKey = `${segment.start_time}-${segment.end_time}`;
+      return !keptSegments.has(segmentKey);
+    });
+    
     setSegments(filtered);
-  }, [segmentFilter, allSegments, acceptedSegments, highlights]);
+  }, [segmentFilter, allSegments, acceptedSegments, keptSegments, highlights]);
 
   // Update sequences when acceptedSegments changes to reflect deletions in both video and audio tracks
   useEffect(() => {
@@ -1512,24 +1630,24 @@ export default function TimelinePage() {
     return () => window.removeEventListener("keydown", handleSegmentNav);
   }, [currentSegmentIndex, segments.length]);
 
-  // Count segments by label, excluding accepted segments
+  // Count segments by label, excluding accepted and kept segments
   const segmentCounts: Record<"FLUFF" | "HIGHLIGHTS", number> = useMemo(() => {
     const fluffCount = allSegments.filter(s => {
       if (s.label !== "FLUFF") return false;
       const segmentKey = `${s.start_time}-${s.end_time}`;
-      return !acceptedSegments.has(segmentKey);
+      return !acceptedSegments.has(segmentKey) && !keptSegments.has(segmentKey);
     }).length;
     
     const highlightsCount = highlights.filter(h => {
       const segmentKey = `${h.start}-${h.end}`;
-      return !acceptedSegments.has(segmentKey);
+      return !acceptedSegments.has(segmentKey) && !keptSegments.has(segmentKey);
     }).length;
     
     return {
       FLUFF: fluffCount,
       HIGHLIGHTS: highlightsCount,
     };
-  }, [allSegments, highlights, acceptedSegments]);
+  }, [allSegments, highlights, acceptedSegments, keptSegments]);
 
   if (loading) {
     return (
@@ -1781,8 +1899,7 @@ export default function TimelinePage() {
                       </div>
                     </div>
 
-                    <div className="flex-1" />
-
+                  <div className="flex-1" />
                     <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-4">
                       <div className="flex items-center gap-2">
                         <Tooltip>
@@ -1825,10 +1942,20 @@ export default function TimelinePage() {
 
                     <div className="flex items-center gap-2 ml-[-20px]">
                       <Button
+                        onClick={handleImplementAllFluff}
+                        variant="mono"
+                        size="md"
+                        title="Grey out all FLUFF segments"
+                        disabled={cutting || saving || segmentCounts.FLUFF === 0}
+                        className="!bg-[#2563EB] hover:!bg-[#1D4ED8] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
+                      >
+                        Implement All
+                      </Button>
+                      <Button
                         onClick={handleAcceptSegment}
                         variant="primary"
                         size="md"
-                        className="bg-red-600 hover:bg-red-700"
+                        className="!bg-[#DC2626] hover:!bg-[#B91C1C] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
                         title="Delete - Press 'A'"
                         disabled={cutting || saving}
                       >
@@ -1838,6 +1965,7 @@ export default function TimelinePage() {
                         onClick={handleDeclineSegment}
                         variant="mono"
                         size="md"
+                        className="!bg-[#16A34A] hover:!bg-[#15803D] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
                         title="Keep - Press 'D'"
                       >
                         Keep
@@ -1867,7 +1995,7 @@ export default function TimelinePage() {
             onTrackControlChange={handleTrackControlChange}
             segments={segments.filter(segment => {
               const segmentKey = `${segment.start_time}-${segment.end_time}`;
-              return !acceptedSegments.has(segmentKey);
+              return !acceptedSegments.has(segmentKey) && !keptSegments.has(segmentKey);
             })}
             onBladeTool={handleBladeTool}
             onSelectTool={handleSelectTool}
@@ -1893,6 +2021,7 @@ export default function TimelinePage() {
             onPlaybackRateChange={handlePlaybackRateChange}
             playbackRate={playbackRate}
             acceptedSegments={acceptedSegments}
+            gaps={gaps}
             videoUrl={videoUrl}
             onSplitClip={handleSplitClip}
             onTrimClip={handleTrimClip}

@@ -10,12 +10,12 @@ import {
   getVideoPlaybackUrl,
   getVideoStatus,
   getSegments,
-  storePendingCuts,
-  getPendingCuts,
-  saveVideoCuts,
+  getTranscript,
   submitSegmentFeedback,
+  precacheVideo,
 } from "@/lib/api";
-import { Highlight, MomentResponse, Track, TimelineItem, Sequence, SegmentAnalysis } from "@/lib/types";
+import { Highlight, MomentResponse, Track, TimelineItem, Sequence, SegmentAnalysis, EditableSegment, EDL, Gaps } from "@/lib/types";
+import { TimelineEngine, TimelineGraph } from "@/core/engine";
 import { VideoPlayer, VideoPlayerRef } from "@/components/ui/video-player";
 import { Timeline } from "@/components/ui/timeline";
 import { Button } from "@/components/ui/button-1";
@@ -45,6 +45,38 @@ import { SHORTCUTS, getShortcutDisplay } from "@/lib/shortcuts";
 import { saveEditingSession, loadEditingSession } from "@/lib/sessionStorage";
 import { useUser } from "@clerk/nextjs";
 
+// === EDL/Gaps Utility Functions ===
+// Note: These are now computed by TimelineEngine.toEDL() and TimelineEngine.toGaps()
+// Keeping this function for backward compatibility during migration
+function computeGapsFromEDL(edl: [number, number][], duration: number): [number, number][] {
+  if (edl.length === 0) return duration > 0 ? [[0, duration]] : [];
+  
+  const sorted = [...edl].sort((a, b) => a[0] - b[0]);
+  const gaps: [number, number][] = [];
+  
+  // Gap before first segment
+  if (sorted[0][0] > 0) {
+    gaps.push([0, sorted[0][0]]);
+  }
+  
+  // Gaps between segments
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const gapStart = sorted[i][1];
+    const gapEnd = sorted[i + 1][0];
+    if (gapEnd > gapStart) {
+      gaps.push([gapStart, gapEnd]);
+    }
+  }
+  
+  // Gap after last segment
+  const lastEnd = sorted[sorted.length - 1][1];
+  if (lastEnd < duration) {
+    gaps.push([lastEnd, duration]);
+  }
+  
+  return gaps;
+}
+
 export default function TimelinePage() {
   const params = useParams();
   const router = useRouter();
@@ -65,12 +97,21 @@ export default function TimelinePage() {
   const [duration, setDuration] = useState(0);
   const [videoUrl, setVideoUrl] = useState<string>("");
   const [isPlaying, setIsPlaying] = useState(false);
-  const [segmentFilter, setSegmentFilter] = useState<"FLUFF" | "HIGHLIGHTS">("FLUFF");
+  const [segmentFilter, setSegmentFilter] = useState<"FLUFF" | "HIGHLIGHTS" | "ALL">("ALL");
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState<number>(0);
-  const [acceptedSegments, setAcceptedSegments] = useState<Set<string>>(new Set());
-  const [pendingCutsCount, setPendingCutsCount] = useState(0);
-  const [cutting, setCutting] = useState(false);
-  const [saving, setSaving] = useState(false);
+  
+  // === TIMELINE ENGINE (Single Source of Truth) ===
+  // The engine manages timeline state; React subscribes to snapshots
+  const engineRef = useRef<TimelineEngine | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const [engineSnapshot, setEngineSnapshot] = useState<TimelineGraph | null>(null);
+  
+  // Legacy timeline state - derived from engine for backward compatibility
+  const timeline = useMemo<EditableSegment[]>(() => {
+    if (!engineRef.current) return [];
+    return engineRef.current.toEditableSegments();
+  }, [engineSnapshot]);
+  
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState<Set<string>>(new Set());
   const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
@@ -86,6 +127,9 @@ export default function TimelinePage() {
   const [selections, setSelections] = useState<string[]>([]);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   
+  // Track previous item positions for animation
+  const previousItemPositionsRef = useRef<Map<string, { start: number; end: number }>>(new Map());
+  
   // Project name state
   const [projectName, setProjectName] = useState<string>("Untitled Project");
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
@@ -93,6 +137,9 @@ export default function TimelinePage() {
   
   // Export dialog state
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  
+  // Video version for cache busting after cuts are applied
+  const [videoVersion, setVideoVersion] = useState(0);
   
   // Undo/Redo state
   const [history, setHistory] = useState<Array<{ type: string; data: any }>>([]);
@@ -102,38 +149,140 @@ export default function TimelinePage() {
   const canUndo = historyIndex >= 0;
   const canRedo = historyIndex < history.length - 1;
 
+  // === CHAINED DERIVED VIEWS (engine-driven) ===
+  // These now derive from the engine snapshot for sub-frame consistency
+  const activeSegments = useMemo(() => 
+    timeline.filter(s => s.keep), [timeline]);
+
+  const transcriptView = useMemo(() => 
+    activeSegments.map(s => s.text).join(" "), [activeSegments]);
+
+  // EDL and gaps now computed by engine
+  const edl = useMemo<EDL>(() => 
+    engineRef.current?.toEDL() || [], [engineSnapshot]);
+
+  const gaps = useMemo<Gaps>(() => {
+    const computedGaps = engineRef.current?.toGaps() || [];
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:gaps:computed',message:'gaps computed',data:{gapsCount:computedGaps.length,gaps:computedGaps.map(g=>[g[0],g[1]]),hasEngineSnapshot:!!engineRef.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    if (computedGaps.length > 0) {
+      console.log('[gaps] Computed gaps:', computedGaps.map(g => `${g[0].toFixed(2)}-${g[1].toFixed(2)}`));
+    }
+    return computedGaps;
+  }, [engineSnapshot]);
+
+  // Versioned video URL for cache busting after cuts
+  const versionedVideoUrl = useMemo(() => 
+    videoUrl ? `${videoUrl}?v=${videoVersion}` : "", [videoUrl, videoVersion]);
+
+  // NOTE: Auto-sync to backend DISABLED for preview mode editing
+  // Gap-skipping handles playback in preview mode (skipping disabled segments)
+  // Gaps are synced to backend only on explicit export
+  // This prevents the video from being re-encoded on every edit
+
+  // Toggle segment keep state via engine mutation
+  const toggleSegmentKeep = useCallback((id: string) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:toggleSegmentKeep:entry',message:'toggleSegmentKeep called',data:{id,hasEngine:!!engineRef.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    if (!engineRef.current) return;
+    
+    // Log the segment being toggled for debugging
+    const clip = engineRef.current.findClipById(id);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:toggleSegmentKeep:clipFound',message:'clip lookup result',data:{id,clipFound:!!clip,clipEnabled:clip?.enabled,clipStart:clip?.start,clipIn:clip?.in,clipOut:clip?.out},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C'})}).catch(()=>{});
+    // #endregion
+    if (clip && clip.enabled) {
+      console.log('[toggleSegmentKeep] Disabling:', { start: clip.start, end: clip.start + (clip.out - clip.in) });
+      
+      // Move playhead to end of the deleted segment
+      const clipEnd = clip.start + (clip.out - clip.in);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:toggleSegmentKeep:seekingPlayhead',message:'seeking playhead to clipEnd',data:{clipEnd,hasPlayerRef:!!playerRef.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+      if (playerRef.current) {
+        playerRef.current.seek(clipEnd);
+      }
+    }
+    
+    // Dispatch mutation to engine
+    engineRef.current.mutate({ type: 'TOGGLE_CLIP', clipId: id });
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:toggleSegmentKeep:afterMutate',message:'mutation dispatched',data:{id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+  }, []);
+
+  // Disable all FLUFF segments immediately
+  const handleImplementAllFluff = useCallback(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleImplementAllFluff:entry',message:'handleImplementAllFluff called',data:{hasEngine:!!engineRef.current,allSegmentsLength:allSegments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+    if (!engineRef.current) return;
+    
+    // Find all FLUFF segments that are currently enabled
+    const fluffSegments = allSegments.filter((seg: SegmentAnalysis) => seg.label === "FLUFF");
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleImplementAllFluff:fluffSegments',message:'fluff segments found',data:{fluffSegmentsCount:fluffSegments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    const mutations: Array<{ type: 'DISABLE_CLIP'; clipId: string }> = [];
+    
+    fluffSegments.forEach((segment: SegmentAnalysis) => {
+      // Find matching timeline segment
+      const timelineSegment = timeline.find(t => 
+        Math.abs(t.start - segment.start_time) < 0.01 && 
+        Math.abs(t.end - segment.end_time) < 0.01
+      );
+      
+      if (timelineSegment) {
+        // Check if clip is currently enabled
+        const clip = engineRef.current?.findClipById(timelineSegment.id);
+        if (clip && clip.enabled) {
+          mutations.push({ type: 'DISABLE_CLIP', clipId: timelineSegment.id });
+        }
+      }
+    });
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleImplementAllFluff:mutations',message:'mutations prepared',data:{mutationsCount:mutations.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    if (mutations.length > 0) {
+      // Apply all mutations in a single batch
+      engineRef.current.mutate({ type: 'BATCH', mutations });
+    }
+  }, [allSegments, timeline]);
+
   useEffect(() => {
     if (videoId) {
       loadVideoData();
-      loadPendingCuts();
     }
   }, [videoId]);
-
-  const loadPendingCuts = async () => {
-    try {
-      const result = await getPendingCuts(videoId);
-      setPendingCutsCount(result.total_pending);
-      
-      // Sync accepted segments with pending cuts from server
-      const pendingSet = new Set<string>();
-      result.pending_cuts.forEach(cut => {
-        pendingSet.add(`${cut.start_time}-${cut.end_time}`);
-      });
-      setAcceptedSegments(pendingSet);
-    } catch (err) {
-      console.error("Error loading pending cuts:", err);
-    }
-  };
+  
+  // Cleanup engine subscription on unmount
+  useEffect(() => {
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+    };
+  }, []);
 
   const loadVideoData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [statusData, highlightsData, segmentsData] = await Promise.all([
+      // Start video precaching immediately (runs in background on server)
+      precacheVideo(videoId).catch(() => {
+        // Silently ignore precache errors - not critical for initial load
+      });
+
+      const [statusData, highlightsData, segmentsData, transcriptData] = await Promise.all([
         getVideoStatus(videoId),
         getHighlights(videoId),
-        getSegments(videoId).catch(() => ({ video_id: videoId, segments: [] })), // Fallback if segments not available
+        getSegments(videoId).catch(() => ({ video_id: videoId, segments: [] })),
+        getTranscript(videoId).catch(() => ({ video_id: videoId, segments: [] })),
       ]);
 
       setHighlights(highlightsData.highlights);
@@ -148,29 +297,43 @@ export default function TimelinePage() {
       // Set initial segments (will be filtered by useEffect)
       setSegments(validSegments);
       
-      // Print segments with start/stop times
-      console.log('=== SEGMENTS ===');
-      console.log(`Total segments from API: ${segmentsData.segments.length}`);
-      console.log(`Valid segments: ${validSegments.length}`);
-      validSegments.forEach((segment, idx) => {
-        console.log(`Segment ${idx + 1}:`, {
-          label: segment.label,
-          start_time: segment.start_time,
-          end_time: segment.end_time,
-          duration: `${(segment.end_time - segment.start_time).toFixed(2)}s`,
-          rating: segment.rating,
-          reason: segment.reason,
-        });
+      // Initialize timeline with editable segments (all keep=true by default)
+      // Match transcript text to each segment based on time overlap
+      const editableSegments: EditableSegment[] = validSegments.map((seg, idx) => {
+        // Find transcript segments that overlap with this segment
+        const overlappingTranscript = transcriptData.segments.filter(t => 
+          t.start < seg.end_time && t.end > seg.start_time
+        );
+        const text = overlappingTranscript.map(t => t.text).join(" ").trim();
+        
+        return {
+          id: seg.id || `segment-${idx}`,
+          start: seg.start_time,
+          end: seg.end_time,
+          text: text || seg.reason || "",
+          keep: true,
+        };
       });
       
-      // Log invalid segments
-      const invalidSegments = segmentsData.segments.filter(
-        segment => segment.end_time <= segment.start_time || segment.start_time < 0
-      );
-      if (invalidSegments.length > 0) {
-        console.warn(`Found ${invalidSegments.length} invalid segments:`, invalidSegments);
+      // === INITIALIZE TIMELINE ENGINE ===
+      // Create engine from segments and subscribe to updates
+      const videoDuration = statusData.duration || 0;
+      
+      // Cleanup previous subscription before creating new engine
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
       }
-      console.log('===============');
+      
+      engineRef.current = TimelineEngine.fromSegments(editableSegments, videoId, videoDuration);
+      
+      // Subscribe to engine updates - store unsubscribe for cleanup
+      unsubscribeRef.current = engineRef.current.subscribe((snapshot) => {
+        setEngineSnapshot(snapshot);
+      });
+      
+      console.log('=== TIMELINE ENGINE INITIALIZED ===');
+      console.log(`Total clips: ${editableSegments.length}`);
       
       setDuration(statusData.duration || 0);
       setVideoUrl(getVideoPlaybackUrl(videoId));
@@ -194,8 +357,8 @@ export default function TimelinePage() {
         setTracks(timelineTracks);
       }
 
-      // Create sequence from tracks (filter out accepted segments)
-      const sequence = createSequenceFromTracks(timelineTracks, statusData.duration || 0, acceptedSegments);
+      // Create sequence from tracks
+      const sequence = createSequenceFromTracks(timelineTracks, statusData.duration || 0);
       setSequences([sequence]);
       setActiveSequenceId(sequence.id);
     } catch (err) {
@@ -211,6 +374,14 @@ export default function TimelinePage() {
   ): Track[] => {
     const tracks: Track[] = [];
 
+    // Sort highlights by score (descending) and create a map for quick lookup
+    const sortedHighlights = [...highlights].sort((a, b) => b.score - a.score);
+    const highlightRankMap = new Map<number, number>();
+    sortedHighlights.forEach((highlight, index) => {
+      const key = Math.round(highlight.start * 100) + Math.round(highlight.end * 100);
+      highlightRankMap.set(key, index + 1);
+    });
+
     moments.forEach((moment, index) => {
       // Find matching highlight for this moment
       const matchingHighlight = highlights.find(
@@ -219,12 +390,21 @@ export default function TimelinePage() {
           Math.abs(h.end - moment.end) < 0.5
       );
 
+      // Get rank if highlight exists
+      let rank: number | undefined;
+      if (matchingHighlight) {
+        const key = Math.round(matchingHighlight.start * 100) + Math.round(matchingHighlight.end * 100);
+        rank = highlightRankMap.get(key);
+      }
+
       const item: TimelineItem = {
         id: moment.id,
         start: moment.start,
         end: moment.end,
         title: matchingHighlight?.title || `Moment ${index + 1}`,
         momentUrl: moment.moment_url,
+        isHighlight: !!matchingHighlight,
+        rank: rank,
       };
 
       // Create one track per moment
@@ -246,7 +426,10 @@ export default function TimelinePage() {
   const createTracksFromHighlights = (highlights: Highlight[]): Track[] => {
     const tracks: Track[] = [];
 
-    highlights.forEach((highlight, index) => {
+    // Sort highlights by score (descending) and assign ranks
+    const sortedHighlights = [...highlights].sort((a, b) => b.score - a.score);
+
+    sortedHighlights.forEach((highlight, index) => {
       const item: TimelineItem = {
         id: `highlight-${index}`,
         start: highlight.start,
@@ -254,6 +437,7 @@ export default function TimelinePage() {
         title: highlight.title || `Highlight ${index + 1}`,
         momentUrl: "",
         isHighlight: true, // Mark as highlight for purple color
+        rank: index + 1, // Rank from 1 (best) to last
       };
 
       // Create one track per highlight
@@ -272,7 +456,7 @@ export default function TimelinePage() {
     return tracks;
   };
 
-  const createSequenceFromTracks = (tracks: Track[], duration: number, acceptedSegmentsSet?: Set<string>): Sequence => {
+  const createSequenceFromTracks = (tracks: Track[], duration: number): Sequence => {
     // Create video tracks (V1 only for now)
     const videoTracks: Track[] = Array.from({ length: 1 }, (_, i) => ({
       id: `video-track-${i}`,
@@ -284,44 +468,20 @@ export default function TimelinePage() {
       muted: false,
       soloed: false,
     }));
-    // Commented out V2, V3 for now
-    // const videoTracks: Track[] = Array.from({ length: 3 }, (_, i) => ({
-    //   id: `video-track-${i}`,
-    //   items: [],
-    //   trackType: 'video' as const,
-    //   trackIndex: i,
-    //   locked: false,
-    //   visible: true,
-    //   muted: false,
-    //   soloed: false,
-    // }));
 
-    // Helper function to check if a segment is accepted (deleted)
-    const isSegmentAccepted = (start: number, end: number): boolean => {
-      if (!acceptedSegmentsSet) return false;
-      const segmentKey = `${start}-${end}`;
-      return acceptedSegmentsSet.has(segmentKey);
-    };
+    // Full-length video block on V1
+    videoTracks[0].items.push({
+      id: `video-full-${videoId}`,
+      start: 0,
+      end: duration,
+      title: 'Video',
+      momentUrl: '',
+    });
 
-    // Create a full-length video block spanning the entire duration on V1
-    if (duration > 0) {
-      const fullVideoItem: TimelineItem = {
-        id: `video-full-${videoId}`,
-        start: 0,
-        end: duration,
-        title: 'Video',
-        momentUrl: '',
-      };
-      videoTracks[0].items.push(fullVideoItem);
-    }
-
-    // Place all highlight/moment video items on V1 (trackIndex 0) as well
-    // Filter out items that correspond to accepted segments
+    // Place all highlight/moment video items on V1
     tracks.forEach((track) => {
       track.items.forEach((videoItem) => {
-        if (!isSegmentAccepted(videoItem.start, videoItem.end)) {
-          videoTracks[0].items.push(videoItem);
-        }
+        videoTracks[0].items.push(videoItem);
       });
     });
 
@@ -336,45 +496,30 @@ export default function TimelinePage() {
       muted: false,
       soloed: false,
     }));
-    // Commented out A2, A3 for now
-    // const audioTracks: Track[] = Array.from({ length: 3 }, (_, i) => ({
-    //   id: `audio-track-${i}`,
-    //   items: [],
-    //   trackType: 'audio' as const,
-    //   trackIndex: i,
-    //   locked: false,
-    //   visible: true,
-    //   muted: false,
-    //   soloed: false,
-    // }));
 
-    // Create a full-length audio block spanning the entire duration on A1
-    if (duration > 0) {
-      const fullAudioItem: TimelineItem = {
-        id: `audio-full-${videoId}`,
-        start: 0,
-        end: duration,
-        title: 'Audio',
-        momentUrl: '',
-      };
-      audioTracks[0].items.push(fullAudioItem);
-    }
+    // Full-length audio block on A1
+    const fullAudioItems: TimelineItem[] = [{
+      id: `audio-full-${videoId}`,
+      start: 0,
+      end: duration,
+      title: 'Audio',
+      momentUrl: '',
+    }];
+    fullAudioItems.forEach(item => audioTracks[0].items.push(item));
 
-    // Create corresponding audio items for each video item and place them on A1 (trackIndex 0)
-    // Filter out items that correspond to accepted segments
+    // Create corresponding audio items for each video item
     tracks.forEach((track) => {
       track.items.forEach((videoItem) => {
-        if (!isSegmentAccepted(videoItem.start, videoItem.end)) {
-          const audioItem: TimelineItem = {
-            id: `audio-${videoItem.id}`,
-            start: videoItem.start,
-            end: videoItem.end,
-            title: videoItem.title,
-            momentUrl: videoItem.momentUrl,
-            isHighlight: videoItem.isHighlight, // Preserve highlight status
-          };
-          audioTracks[0].items.push(audioItem);
-        }
+        const audioItem: TimelineItem = {
+          id: `audio-${videoItem.id}`,
+          start: videoItem.start,
+          end: videoItem.end,
+          title: videoItem.title,
+          momentUrl: videoItem.momentUrl,
+          isHighlight: videoItem.isHighlight,
+          rank: videoItem.rank,
+        };
+        audioTracks[0].items.push(audioItem);
       });
     });
 
@@ -388,15 +533,46 @@ export default function TimelinePage() {
     };
   };
 
-  const handleSeek = (time: number) => {
+  const handleSeek = useCallback((time: number) => {
     if (playerRef.current) {
-      playerRef.current.seek(time);
+      let seekTime = time;
+      
+      // Check if seek time is in a gap - if so, skip to end of gap
+      if (gaps.length > 0) {
+        for (const [gapStart, gapEnd] of gaps) {
+          if (seekTime >= gapStart && seekTime < gapEnd) {
+            seekTime = gapEnd;
+            break;
+          }
+        }
+      }
+      
+      playerRef.current.seek(seekTime);
     }
-  };
+  }, [gaps]);
 
-  const handleTimeUpdate = (time: number) => {
+  const handleTimeUpdate = useCallback((time: number) => {
+    // Engine-driven gap skipping
+    // Use resolve() to check if current time is in a gap
+    if (engineRef.current && playerRef.current) {
+      const frame = engineRef.current.resolve(time, 'video');
+      
+      if (frame.isGap) {
+        // We're in a gap - skip to the next enabled clip
+        const nextClip = engineRef.current.findNextEnabledClip(time, 'video');
+        if (nextClip) {
+          playerRef.current.seek(nextClip.start);
+          return; // Don't update state until we're in valid region
+        } else {
+          // No more clips - pause at end
+          playerRef.current.pause();
+          setIsPlaying(false);
+        }
+      }
+    }
+    
     setCurrentTime(time);
-  };
+  }, []);
 
   const handleDurationChange = (dur: number) => {
     if (dur > 0) {
@@ -421,8 +597,8 @@ export default function TimelinePage() {
   };
 
   const handleTrackControlChange = (trackId: string, control: 'locked' | 'visible' | 'muted' | 'soloed', value: boolean) => {
-    setSequences(prevSequences => {
-      return prevSequences.map(seq => {
+    setSequences((prevSequences: Sequence[]) => {
+      return prevSequences.map((seq: Sequence) => {
         if (seq.id !== activeSequenceId) return seq;
         
         const updateTrack = (track: Track) => {
@@ -450,125 +626,47 @@ export default function TimelinePage() {
     }
   };
 
-  const handleAcceptSegment = async () => {
+  // Toggle current segment's keep state (instant, no backend)
+  const handleAcceptSegment = useCallback(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleAcceptSegment:entry',message:'handleAcceptSegment called',data:{currentSegmentIndex,segmentsLength:segments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    console.log('[handleAcceptSegment] called, currentSegmentIndex:', currentSegmentIndex, 'segments.length:', segments.length);
     if (currentSegmentIndex < 0 || currentSegmentIndex >= segments.length) return;
-    if (cutting) return; // Prevent multiple simultaneous cuts
     
     const segment = segments[currentSegmentIndex];
-    const segmentKey = `${segment.start_time}-${segment.end_time}`;
+    const segmentId = segment.id || `segment-${currentSegmentIndex}`;
+    console.log('[handleAcceptSegment] segment:', { id: segmentId, start: segment.start_time, end: segment.end_time, label: segment.label });
     
-    try {
-      setCutting(true);
-      
-      // Store pending cut on server (generates local preview in background)
-      const result = await storePendingCuts(videoId, [
-        { start_time: segment.start_time, end_time: segment.end_time },
-      ]);
-      
-      // Update local state immediately
-      setAcceptedSegments(prev => new Set([...prev, segmentKey]));
-      setPendingCutsCount(result.total_pending);
-      
-      // Process full video in background (non-blocking)
-      // This replaces the S3 version but doesn't block the UI
-      saveVideoCuts(videoId).catch(err => {
-        console.error("Background video processing error (non-critical):", err);
-        // Don't show error to user - preview is already available
-      });
-      
-      // Auto-advance to next segment
-      if (currentSegmentIndex < segments.length - 1) {
-        navigateToSegment(currentSegmentIndex + 1);
-      } else {
-        navigateToSegment(0);
-      }
-    } catch (err) {
-      console.error("Error deleting segment:", err);
-      setError(err instanceof Error ? err.message : "Failed to delete segment");
-    } finally {
-      setCutting(false);
-    }
-  };
-
-  const handleAutoSave = useCallback(async () => {
-    if (acceptedSegments.size === 0) return;
-    if (saving || cutting) return;
+    // Find matching timeline segment and toggle its keep state
+    const timelineSegment = timeline.find(t => 
+      Math.abs(t.start - segment.start_time) < 0.01 && 
+      Math.abs(t.end - segment.end_time) < 0.01
+    );
     
-    try {
-      // Store pending cuts to server without processing
-      const cutsToStore = Array.from(acceptedSegments).map(key => {
-        const [start, end] = key.split('-').map(Number);
-        return { start_time: start, end_time: end };
-      });
-      
-      if (cutsToStore.length > 0) {
-        const result = await storePendingCuts(videoId, cutsToStore);
-        setPendingCutsCount(result.total_pending);
-        console.log('Auto-saved pending cuts:', result.total_pending);
-      }
-    } catch (err) {
-      console.error("Error auto-saving pending cuts:", err);
-      // Don't show error to user for auto-save failures
-    }
-  }, [acceptedSegments, saving, cutting, videoId]);
-
-  const handleSaveCuts = useCallback(async () => {
-    if (pendingCutsCount === 0) return;
-    if (saving) return;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:handleAcceptSegment:timelineMatch',message:'timeline segment lookup',data:{segmentId,segmentStart:segment.start_time,segmentEnd:segment.end_time,timelineFound:!!timelineSegment,timelineId:timelineSegment?.id,timelineKeep:timelineSegment?.keep},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
+    // #endregion
+    console.log('[handleAcceptSegment] timelineSegment found:', timelineSegment ? { id: timelineSegment.id, keep: timelineSegment.keep } : null);
     
-    try {
-      setSaving(true);
-      setError(null);
-      
-      // Apply all pending cuts and save to video
-      await saveVideoCuts(videoId);
-      
-      // Clear pending cuts
-      setPendingCutsCount(0);
-      setAcceptedSegments(new Set());
-      
-      // Reload video data to reflect changes
-      await loadVideoData();
-    } catch (err) {
-      console.error("Error saving video cuts:", err);
-      setError(err instanceof Error ? err.message : "Failed to save video cuts");
-    } finally {
-      setSaving(false);
+    if (timelineSegment) {
+      toggleSegmentKeep(timelineSegment.id);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingCutsCount, saving, videoId]);
-
-  const handleClearPendingCuts = async () => {
-    if (pendingCutsCount === 0) return;
-    if (saving) return;
     
-    try {
-      setSaving(true);
-      setError(null);
-      
-      // Clear all pending cuts from server
-      const { clearPendingCuts } = await import("@/lib/api");
-      await clearPendingCuts(videoId);
-      
-      // Clear pending cuts locally
-      setPendingCutsCount(0);
-      setAcceptedSegments(new Set());
-    } catch (err) {
-      console.error("Error clearing pending cuts:", err);
-      setError(err instanceof Error ? err.message : "Failed to clear pending cuts");
-    } finally {
-      setSaving(false);
+    // Advance to next segment
+    if (currentSegmentIndex < segments.length - 1) {
+      setCurrentSegmentIndex(currentSegmentIndex + 1);
     }
-  };
+  }, [currentSegmentIndex, segments, timeline, toggleSegmentKeep]);
 
-  const handleDeclineSegment = () => {
-    // Just advance to next segment without accepting
+  // Decline segment - just advance to next (keep is already true by default)
+  const handleDeclineSegment = useCallback(() => {
     if (currentSegmentIndex < segments.length - 1) {
       navigateToSegment(currentSegmentIndex + 1);
     } else {
       navigateToSegment(0);
     }
-  };
+  }, [currentSegmentIndex, segments.length, navigateToSegment]);
 
   const handleSegmentFeedback = async (feedbackType: "GREAT" | "FINE" | "WRONG") => {
     if (currentSegmentIndex < 0 || currentSegmentIndex >= segments.length) return;
@@ -592,7 +690,7 @@ export default function TimelinePage() {
       );
       
       // Mark feedback as given for this segment
-      setFeedbackGiven(prev => new Set([...prev, segmentKey]));
+      setFeedbackGiven((prev: Set<string>) => new Set([...prev, segmentKey]));
       
       // Show thank you dialog
       setShowFeedbackDialog(true);
@@ -616,7 +714,7 @@ export default function TimelinePage() {
     
     // Remove feedback from the current segment
     if (feedbackGiven.has(segmentKey)) {
-      setFeedbackGiven(prev => {
+      setFeedbackGiven((prev: Set<string>) => {
         const newSet = new Set(prev);
         newSet.delete(segmentKey);
         return newSet;
@@ -627,7 +725,7 @@ export default function TimelinePage() {
 
   // Helper to add to history
   const addToHistory = useCallback((type: string, data: any) => {
-    setHistory(prev => {
+    setHistory((prev: Array<{ type: string; data: any }>) => {
       const newHistory = prev.slice(0, historyIndex + 1);
       newHistory.push({ type, data });
       if (newHistory.length > maxHistorySize) {
@@ -646,21 +744,21 @@ export default function TimelinePage() {
       // Restore state based on action type
       if (action.type === 'add_marker') {
         // Undo add: remove the marker
-        setMarkers(prev => {
-          const newMarkers = prev.filter(m => m.id !== action.data.id);
+        setMarkers((prev: Array<{ id: string; time: number; label?: string }>) => {
+          const newMarkers = prev.filter((m: { id: string; time: number; label?: string }) => m.id !== action.data.id);
           saveEditingSession(videoId, { markers: newMarkers }, user?.id);
           return newMarkers;
         });
       } else if (action.type === 'delete_marker') {
         // Undo delete: add the marker back
-        setMarkers(prev => {
-          const newMarkers = [...prev, action.data].sort((a, b) => a.time - b.time);
+        setMarkers((prev: Array<{ id: string; time: number; label?: string }>) => {
+          const newMarkers = [...prev, action.data].sort((a: { id: string; time: number; label?: string }, b: { id: string; time: number; label?: string }) => a.time - b.time);
           saveEditingSession(videoId, { markers: newMarkers }, user?.id);
           return newMarkers;
         });
       }
       
-      setHistoryIndex(prev => prev - 1);
+      setHistoryIndex((prev: number) => prev - 1);
     }
   }, [history, historyIndex, videoId, user?.id]);
 
@@ -672,15 +770,15 @@ export default function TimelinePage() {
       // Restore state based on action type
       if (action.type === 'add_marker') {
         // Redo add: add the marker
-        setMarkers(prev => {
-          const newMarkers = [...prev, action.data].sort((a, b) => a.time - b.time);
+        setMarkers((prev: Array<{ id: string; time: number; label?: string }>) => {
+          const newMarkers = [...prev, action.data].sort((a: { id: string; time: number; label?: string }, b: { id: string; time: number; label?: string }) => a.time - b.time);
           saveEditingSession(videoId, { markers: newMarkers }, user?.id);
           return newMarkers;
         });
       } else if (action.type === 'delete_marker') {
         // Redo delete: remove the marker
-        setMarkers(prev => {
-          const newMarkers = prev.filter(m => m.id !== action.data.id);
+        setMarkers((prev: Array<{ id: string; time: number; label?: string }>) => {
+          const newMarkers = prev.filter((m: { id: string; time: number; label?: string }) => m.id !== action.data.id);
           saveEditingSession(videoId, { markers: newMarkers }, user?.id);
           return newMarkers;
         });
@@ -698,7 +796,7 @@ export default function TimelinePage() {
       time,
       label: `Marker at ${time.toFixed(2)}s`,
     };
-    setMarkers(prev => [...prev, newMarker]);
+    setMarkers((prev: Array<{ id: string; time: number; label?: string }>) => [...prev, newMarker]);
     addToHistory('add_marker', newMarker);
     saveEditingSession(videoId, { markers: [...markers, newMarker] }, user?.id);
   }, [currentTime, markers, videoId, addToHistory, user?.id]);
@@ -706,10 +804,10 @@ export default function TimelinePage() {
   const handleDeleteMarker = useCallback(() => {
     if (markers.length > 0) {
       // Delete marker closest to current time
-      const closestMarker = markers.reduce((prev, curr) => 
+      const closestMarker = markers.reduce((prev: { id: string; time: number; label?: string }, curr: { id: string; time: number; label?: string }) => 
         Math.abs(curr.time - currentTime) < Math.abs(prev.time - currentTime) ? curr : prev
       );
-      const newMarkers = markers.filter(m => m.id !== closestMarker.id);
+      const newMarkers = markers.filter((m: { id: string; time: number; label?: string }) => m.id !== closestMarker.id);
       setMarkers(newMarkers);
       addToHistory('delete_marker', closestMarker);
       saveEditingSession(videoId, { markers: newMarkers }, user?.id);
@@ -717,14 +815,14 @@ export default function TimelinePage() {
   }, [markers, currentTime, videoId, addToHistory, user?.id]);
 
   const handleNextMarker = useCallback(() => {
-    const nextMarker = markers.filter(m => m.time > currentTime).sort((a, b) => a.time - b.time)[0];
+    const nextMarker = markers.filter((m: { id: string; time: number; label?: string }) => m.time > currentTime).sort((a: { id: string; time: number; label?: string }, b: { id: string; time: number; label?: string }) => a.time - b.time)[0];
     if (nextMarker && playerRef.current) {
       playerRef.current.seek(nextMarker.time);
     }
   }, [markers, currentTime]);
 
   const handlePrevMarker = useCallback(() => {
-    const prevMarker = markers.filter(m => m.time < currentTime).sort((a, b) => b.time - a.time)[0];
+    const prevMarker = markers.filter((m: { id: string; time: number; label?: string }) => m.time < currentTime).sort((a: { id: string; time: number; label?: string }, b: { id: string; time: number; label?: string }) => b.time - a.time)[0];
     if (prevMarker && playerRef.current) {
       playerRef.current.seek(prevMarker.time);
     }
@@ -818,7 +916,7 @@ export default function TimelinePage() {
   }, []);
 
   const handleToggleLoop = useCallback(() => {
-    setLoopPlayback(prev => !prev);
+    setLoopPlayback((prev: boolean) => !prev);
   }, []);
 
   const handlePlaybackRateChange = useCallback((rate: number) => {
@@ -830,27 +928,27 @@ export default function TimelinePage() {
 
   // Tool handlers
   const handleBladeTool = useCallback(() => {
-    setActiveTool(prev => prev === 'blade' ? null : 'blade');
+    setActiveTool((prev: 'blade' | 'select' | 'trim' | null) => prev === 'blade' ? null : 'blade');
     console.log('Blade tool activated - coming soon');
   }, []);
 
   const handleSelectTool = useCallback(() => {
-    setActiveTool(prev => prev === 'select' ? null : 'select');
+    setActiveTool((prev: 'blade' | 'select' | 'trim' | null) => prev === 'select' ? null : 'select');
   }, []);
 
   const handleTrimTool = useCallback(() => {
-    setActiveTool(prev => prev === 'trim' ? null : 'trim');
+    setActiveTool((prev: 'blade' | 'select' | 'trim' | null) => prev === 'trim' ? null : 'trim');
     console.log('Trim tool activated - coming soon');
   }, []);
 
   // Handle split clip
   const handleSplitClip = useCallback((sequenceId: string, trackId: string, itemId: string, splitTime: number) => {
-    setSequences(prevSequences => {
-      return prevSequences.map(seq => {
+    setSequences((prevSequences: Sequence[]) => {
+      return prevSequences.map((seq: Sequence) => {
         if (seq.id !== sequenceId) return seq;
 
         const updateTracks = (tracks: Track[]) => {
-          return tracks.map(track => {
+          return tracks.map((track: Track) => {
             if (track.id !== trackId) return track;
             
             const itemIndex = track.items.findIndex(item => item.id === itemId);
@@ -888,12 +986,12 @@ export default function TimelinePage() {
 
   // Handle trim clip
   const handleTrimClip = useCallback((sequenceId: string, trackId: string, itemId: string, newStart: number, newEnd: number) => {
-    setSequences(prevSequences => {
-      return prevSequences.map(seq => {
+    setSequences((prevSequences: Sequence[]) => {
+      return prevSequences.map((seq: Sequence) => {
         if (seq.id !== sequenceId) return seq;
 
         const updateTracks = (tracks: Track[]) => {
-          return tracks.map(track => {
+          return tracks.map((track: Track) => {
             if (track.id !== trackId) return track;
             
             return {
@@ -918,7 +1016,7 @@ export default function TimelinePage() {
   // Handle item selection
   const handleItemSelect = useCallback((itemId: string, multiSelect: boolean) => {
     if (multiSelect) {
-      setSelectedItemIds(prev => {
+      setSelectedItemIds((prev: Set<string>) => {
         const newSet = new Set(prev);
         if (newSet.has(itemId)) {
           newSet.delete(itemId);
@@ -934,14 +1032,14 @@ export default function TimelinePage() {
 
   // Handle moving items - synchronizes video/audio counterparts
   const handleMoveItem = useCallback((sequenceId: string, trackId: string, itemId: string, newStart: number, newEnd: number) => {
-    setSequences(prevSequences => {
-      return prevSequences.map(seq => {
+    setSequences((prevSequences: Sequence[]) => {
+      return prevSequences.map((seq: Sequence) => {
         if (seq.id !== sequenceId) return seq;
 
         // Find the original item to get its duration
         const allItems = [
-          ...seq.videoTracks.flatMap(t => t.items),
-          ...seq.audioTracks.flatMap(t => t.items),
+          ...seq.videoTracks.flatMap((t: Track) => t.items),
+          ...seq.audioTracks.flatMap((t: Track) => t.items),
         ];
         const originalItem = allItems.find(item => item.id === itemId);
         if (!originalItem) return seq;
@@ -950,10 +1048,10 @@ export default function TimelinePage() {
         const actualNewEnd = newEnd - newStart >= itemDuration ? newEnd : newStart + itemDuration;
 
         const updateTracks = (tracks: Track[]) => {
-          return tracks.map(track => {
+          return tracks.map((track: Track) => {
             if (track.id !== trackId) return track;
             
-            const itemIndex = track.items.findIndex(item => item.id === itemId);
+            const itemIndex = track.items.findIndex((item: TimelineItem) => item.id === itemId);
             if (itemIndex === -1) return track;
             
             const item = track.items[itemIndex];
@@ -972,7 +1070,7 @@ export default function TimelinePage() {
         };
 
         // Determine if this is a video or audio item before updating
-        const isVideoItem = seq.videoTracks.some(track => track.items.some(item => item.id === itemId));
+        const isVideoItem = seq.videoTracks.some((track: Track) => track.items.some((item: TimelineItem) => item.id === itemId));
 
         const updatedVideoTracks = updateTracks(seq.videoTracks);
         const updatedAudioTracks = updateTracks(seq.audioTracks);
@@ -1075,7 +1173,7 @@ export default function TimelinePage() {
 
   // Other handlers
   const handleSnapToggle = useCallback(() => {
-    setSnapEnabled(prev => !prev);
+    setSnapEnabled((prev: boolean) => !prev);
   }, []);
 
   const handleSaveProject = useCallback(async () => {
@@ -1093,13 +1191,8 @@ export default function TimelinePage() {
       },
     }, user?.id);
     
-    // If there are pending cuts, also save the video
-    if (pendingCutsCount > 0 && !saving) {
-      await handleSaveCuts();
-    }
-    
     console.log('Project saved');
-  }, [videoId, markers, selections, currentTime, inPoint, outPoint, projectName, snapEnabled, loopPlayback, pendingCutsCount, saving, handleSaveCuts, user?.id]);
+  }, [videoId, markers, selections, currentTime, inPoint, outPoint, projectName, snapEnabled, loopPlayback, user?.id]);
 
   const handleCopy = useCallback(() => {
     console.log('Copy - coming soon');
@@ -1115,7 +1208,7 @@ export default function TimelinePage() {
 
   const handleSelectAll = useCallback(() => {
     // Select all segments/clips
-    const allIds = segments.map(s => s.id || `${s.start_time}-${s.end_time}`);
+    const allIds = segments.map((s: SegmentAnalysis) => s.id || `${s.start_time}-${s.end_time}`);
     setSelections(allIds);
   }, [segments]);
 
@@ -1131,12 +1224,9 @@ export default function TimelinePage() {
     try {
       setError(null);
       
-      // Get pending cuts if any
-      const segmentsToRemove = acceptedSegments.size > 0
-        ? Array.from(acceptedSegments).map(key => {
-            const [start, end] = key.split('-').map(Number);
-            return { start_time: start, end_time: end };
-          })
+      // Convert gaps to segments to remove format
+      const segmentsToRemove = gaps.length > 0
+        ? gaps.map(([start, end]) => ({ start_time: start, end_time: end }))
         : undefined;
       
       // Export the video
@@ -1168,7 +1258,7 @@ export default function TimelinePage() {
       setError(err instanceof Error ? err.message : "Failed to export video");
       throw err;
     }
-  }, [videoId, acceptedSegments]);
+  }, [videoId, gaps]);
 
   // Stub handlers for features not yet implemented
   const handleStub = useCallback((featureName: string) => {
@@ -1282,7 +1372,7 @@ export default function TimelinePage() {
     
     if (segmentFilter === "HIGHLIGHTS") {
       // Convert highlights to segments for display
-      filtered = highlights.map((highlight, index) => ({
+      filtered = highlights.map((highlight: Highlight, index: number) => ({
         id: `highlight-${index}`,
         start_time: highlight.start,
         end_time: highlight.end,
@@ -1295,27 +1385,52 @@ export default function TimelinePage() {
         usefulness_score: highlight.score,
         explanation: highlight.explanation,
       }));
-    } else {
+    } else if (segmentFilter === "FLUFF") {
       // Filter by segment label
-      filtered = allSegments.filter(segment => segment.label === segmentFilter);
+      filtered = allSegments.filter((segment: SegmentAnalysis) => segment.label === segmentFilter);
+    } else {
+      // Show both FLUFF and HIGHLIGHTS
+      const fluffSegments = allSegments.filter((segment: SegmentAnalysis) => segment.label === "FLUFF");
+      const highlightSegments = highlights.map((highlight: Highlight, index: number) => ({
+        id: `highlight-${index}`,
+        start_time: highlight.start,
+        end_time: highlight.end,
+        label: "HIGHLIGHTS" as const,
+        rating: highlight.score,
+        reason: highlight.summary || highlight.title || "Highlight",
+        repetition_score: 0,
+        filler_density: 0,
+        visual_change_score: 0,
+        usefulness_score: highlight.score,
+        explanation: highlight.explanation,
+      }));
+      filtered = [...fluffSegments, ...highlightSegments];
     }
     
-    // Remove accepted segments (they're marked for removal)
-    filtered = filtered.filter(segment => {
-      const segmentKey = `${segment.start_time}-${segment.end_time}`;
-      return !acceptedSegments.has(segmentKey);
+    // Filter based on keep state in timeline
+    const beforeFilterCount = filtered.length;
+    filtered = filtered.filter((segment: SegmentAnalysis) => {
+      const timelineSegment = timeline.find(t => 
+        Math.abs(t.start - segment.start_time) < 0.01 && 
+        Math.abs(t.end - segment.end_time) < 0.01
+      );
+      return !timelineSegment || timelineSegment.keep;
     });
     
+    console.log('[segments filter effect] segmentFilter:', segmentFilter);
+    console.log('[segments filter effect] before keep filter:', beforeFilterCount, 'after:', filtered.length);
+    console.log('[segments filter effect] removed segments:', timeline.filter(t => !t.keep).map(t => ({ id: t.id, start: t.start, end: t.end })));
+    
     setSegments(filtered);
-  }, [segmentFilter, allSegments, acceptedSegments, highlights]);
+  }, [segmentFilter, allSegments, timeline, highlights]);
 
-  // Update sequences when acceptedSegments changes to reflect deletions in both video and audio tracks
+  // Update sequences when tracks or duration changes
   useEffect(() => {
     if (tracks.length > 0 && duration > 0) {
-      const updatedSequence = createSequenceFromTracks(tracks, duration, acceptedSegments);
+      const updatedSequence = createSequenceFromTracks(tracks, duration);
       setSequences([updatedSequence]);
     }
-  }, [acceptedSegments, tracks, duration, videoId]);
+  }, [tracks, duration, videoId]);
 
   // Reset current index when segments change
   useEffect(() => {
@@ -1337,7 +1452,7 @@ export default function TimelinePage() {
     if (isManualNavigation.current) return; // Don't update if user just navigated manually
     
     // Find which segment contains the current time
-    const segmentIndex = segments.findIndex(segment => 
+    const segmentIndex = segments.findIndex((segment: SegmentAnalysis) => 
       currentTime >= segment.start_time && currentTime <= segment.end_time
     );
     
@@ -1346,7 +1461,7 @@ export default function TimelinePage() {
       setCurrentSegmentIndex(segmentIndex);
     } else if (segmentIndex === -1 && currentSegmentIndex >= 0) {
       // If current time is not in any segment, find the closest segment
-      const closestIndex = segments.reduce((closest, segment, index) => {
+      const closestIndex = segments.reduce((closest: { index: number; distance: number }, segment: SegmentAnalysis, index: number) => {
         const currentDistance = Math.abs(currentTime - (segment.start_time + segment.end_time) / 2);
         const closestDistance = closest.index === -1 
           ? Infinity
@@ -1414,45 +1529,27 @@ export default function TimelinePage() {
     }
   }, [isEditingProjectName]);
 
-  // Generate deterministic UUID from project name using Web Crypto API
-  const generateIdFromName = useCallback(async (name: string): Promise<string> => {
-    // Use Web Crypto API to generate a deterministic hash
-    const encoder = new TextEncoder();
-    const namespace = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
-    const data = encoder.encode(namespace + name);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    
-    // Format as UUID v4-style (deterministic based on name)
-    const uuid = [
-      hex.substring(0, 8),
-      hex.substring(8, 12),
-      '4' + hex.substring(13, 16),
-      ((parseInt(hex.substring(16, 17), 16) & 0x3) | 0x8).toString(16) + hex.substring(17, 20),
-      hex.substring(20, 32)
-    ].join('-');
-    
-    return uuid;
-  }, []);
-
   // Handle project name save
   const handleProjectNameSave = useCallback(async () => {
     setIsEditingProjectName(false);
     
-    // Generate new ID from project name
-    const newVideoId = await generateIdFromName(projectName);
-    
-    // Save to backend with new ID
-    await saveEditingSession(newVideoId, { projectName }, user?.id);
-    
-    // Navigate to new URL with the generated ID
-    if (newVideoId !== videoId) {
-      router.push(`/timeline/${newVideoId}`);
-    } else {
+    try {
+      // Save project name to current video's timeline
       await saveEditingSession(videoId, { projectName }, user?.id);
+    } catch (err) {
+      console.error("Error saving project name:", err);
+      // Show error but don't prevent the UI from updating
+      setError(err instanceof Error ? err.message : "Failed to save project name");
+      // Restore previous name on error
+      loadEditingSession(videoId).then(session => {
+        if (session.projectName) {
+          setProjectName(session.projectName);
+        } else {
+          setProjectName("Untitled Project");
+        }
+      });
     }
-  }, [videoId, projectName, router, generateIdFromName, user?.id]);
+  }, [videoId, projectName, user?.id]);
 
   // Handle project name key press
   const handleProjectNameKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1470,15 +1567,6 @@ export default function TimelinePage() {
       });
     }
   }, [videoId, handleProjectNameSave]);
-
-  // Auto-save every 5 minutes
-  useEffect(() => {
-    const interval = setInterval(() => {
-      handleAutoSave();
-    }, 5 * 60 * 1000); // 5 minutes
-    
-    return () => clearInterval(interval);
-  }, [handleAutoSave]);
 
   // Handle segment navigation shortcuts (keep existing behavior but integrate with new system)
   useEffect(() => {
@@ -1512,24 +1600,37 @@ export default function TimelinePage() {
     return () => window.removeEventListener("keydown", handleSegmentNav);
   }, [currentSegmentIndex, segments.length]);
 
-  // Count segments by label, excluding accepted segments
+  // Count segments by label, using timeline keep state
   const segmentCounts: Record<"FLUFF" | "HIGHLIGHTS", number> = useMemo(() => {
-    const fluffCount = allSegments.filter(s => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:segmentCounts:entry',message:'segmentCounts computation started',data:{allSegmentsLength:allSegments.length,highlightsLength:highlights.length,timelineLength:timeline.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch(()=>{});
+    // #endregion
+    const fluffCount = allSegments.filter((s: SegmentAnalysis) => {
       if (s.label !== "FLUFF") return false;
-      const segmentKey = `${s.start_time}-${s.end_time}`;
-      return !acceptedSegments.has(segmentKey);
+      const timelineSegment = timeline.find(t => 
+        Math.abs(t.start - s.start_time) < 0.01 && 
+        Math.abs(t.end - s.end_time) < 0.01
+      );
+      return !timelineSegment || timelineSegment.keep;
     }).length;
     
-    const highlightsCount = highlights.filter(h => {
-      const segmentKey = `${h.start}-${h.end}`;
-      return !acceptedSegments.has(segmentKey);
+    const highlightsCount = highlights.filter((h: Highlight) => {
+      const timelineSegment = timeline.find(t => 
+        Math.abs(t.start - h.start) < 0.01 && 
+        Math.abs(t.end - h.end) < 0.01
+      );
+      return !timelineSegment || timelineSegment.keep;
     }).length;
     
-    return {
+    const result = {
       FLUFF: fluffCount,
       HIGHLIGHTS: highlightsCount,
     };
-  }, [allSegments, highlights, acceptedSegments]);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:segmentCounts:result',message:'segmentCounts computed',data:{fluffCount,highlightsCount,result},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch(()=>{});
+    // #endregion
+    return result;
+  }, [allSegments, highlights, timeline]);
 
   if (loading) {
     return (
@@ -1554,6 +1655,11 @@ export default function TimelinePage() {
       </div>
     );
   }
+
+  // #region agent log
+  console.log('[DEBUG] TimelinePage render:', { segmentsLength: segments.length, currentSegment: !!currentSegment, segmentCounts, allSegmentsLength: allSegments.length });
+  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:TimelinePage:render',message:'TimelinePage rendering',data:{segmentsLength:segments.length,hasCurrentSegment:!!currentSegment,segmentCounts,allSegmentsLength:allSegments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch((err) => console.error('[DEBUG] Log fetch failed:', err));
+  // #endregion
 
   return (
     <TooltipProvider>
@@ -1664,23 +1770,7 @@ export default function TimelinePage() {
           <div className="w-px h-6 bg-zinc-700" />
           <div className="flex gap-2">
             <Button
-              onClick={async () => {
-                // Save pending cuts before navigating
-                if (acceptedSegments.size > 0 && !saving && !cutting) {
-                  try {
-                    const cutsToStore = Array.from(acceptedSegments).map(key => {
-                      const [start, end] = key.split('-').map(Number);
-                      return { start_time: start, end_time: end };
-                    });
-                    if (cutsToStore.length > 0) {
-                      await storePendingCuts(videoId, cutsToStore);
-                    }
-                  } catch (err) {
-                    console.error("Error saving before navigation:", err);
-                  }
-                }
-                router.push("/dashboard");
-              }}
+              onClick={() => router.push("/dashboard")}
               variant="mono"
               size="sm"
             >
@@ -1702,9 +1792,9 @@ export default function TimelinePage() {
           <div className="flex flex-col h-full">
             {videoUrl && (
               <VideoPlayer
-                key={videoId}
+                key={`${videoId}-${videoVersion}`}
                 ref={playerRef}
-                src={videoUrl}
+                src={versionedVideoUrl}
                 videoId={videoId}
                 onTimeUpdate={handleTimeUpdate}
                 onDurationChange={handleDurationChange}
@@ -1717,12 +1807,27 @@ export default function TimelinePage() {
                   end_time: currentSegment.end_time,
                   rating: currentSegment.rating,
                 } : undefined}
+                gaps={gaps}
+                activeTranscript={activeSegments.map(s => ({ start: s.start, end: s.end, text: s.text }))}
               />
             )}
             {/* Segment Review Panel */}
-            {segments.length > 0 && (
+            {(() => {
+              // #region agent log
+              console.log('[DEBUG] SegmentReviewPanel check:', { segmentsLength: segments.length, hasCurrentSegment: !!currentSegment, segmentCounts, segmentCountsFluff: segmentCounts?.FLUFF });
+              fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:SegmentReviewPanel:check',message:'checking if segment review panel should render',data:{segmentsLength:segments.length,hasCurrentSegment:!!currentSegment,segmentCounts,segmentCountsFluff:segmentCounts?.FLUFF},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch((err) => console.error('[DEBUG] Log fetch failed:', err));
+              // #endregion
+              return segments.length > 0;
+            })() && (
               <div className="relative flex items-center gap-4 px-4 py-3 border-t border-zinc-800 bg-zinc-900 flex-shrink-0">
-                {currentSegment && (
+                {(() => {
+                  // #region agent log
+                  const hasCurrentSegment = !!currentSegment;
+                  console.error('[DEBUG] ButtonContainer render check:', { hasCurrentSegment, currentSegmentId: currentSegment?.id, segmentsLength: segments.length });
+                  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:ButtonContainer:renderCheck',message:'checking if button container renders',data:{hasCurrentSegment,currentSegmentId:currentSegment?.id,segmentsLength:segments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D,E'})}).catch((e)=>console.error('[DEBUG] Log fetch failed:', e));
+                  // #endregion
+                  return hasCurrentSegment;
+                })() && (
                   <>
                     <div className="flex flex-col items-center gap-1 px-2 sm:px-4">
                       <span className="text-xs text-zinc-400 uppercase tracking-wide">clip feedback</span>
@@ -1824,20 +1929,66 @@ export default function TimelinePage() {
                     </div>
 
                     <div className="flex items-center gap-2 ml-[-20px]">
+                      {/* TEST: Always visible debug marker */}
+                      <div style={{backgroundColor: 'yellow', padding: '2px 4px', fontSize: '10px'}}>TEST</div>
+                      {/* #region agent log */}
+                      {(() => {
+                        console.error('[DEBUG] ===== ImplementAllButton IIFE STARTING =====');
+                        const hasHandler = typeof handleImplementAllFluff === 'function';
+                        const handlerType = typeof handleImplementAllFluff;
+                        const hasCurrentSegment = !!currentSegment;
+                        console.error('[DEBUG] ImplementAllButton render check:', { hasHandler, handlerType, hasCurrentSegment, segmentsLength: segments.length });
+                        fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:ImplementAllButton:renderCheck',message:'checking button render conditions',data:{hasHandler,handlerType,hasCurrentSegment,segmentsLength:segments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch((e)=>console.error('[DEBUG] Log fetch failed:', e));
+                        // #endregion
+                        if (!hasHandler) {
+                          // #region agent log
+                          console.error('[DEBUG] ImplementAllButton: handler missing!', { handlerType });
+                          fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:ImplementAllButton:handlerMissing',message:'handleImplementAllFluff is not a function',data:{handlerType},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch((e)=>console.error('[DEBUG] Log fetch failed:', e));
+                          // #endregion
+                          return <div style={{color: 'red', padding: '4px', border: '1px solid red', backgroundColor: 'yellow'}}>NO HANDLER: {String(handlerType)}</div>;
+                        }
+                        // #region agent log
+                        console.error('[DEBUG] ImplementAllButton: RENDERING BUTTON - handler exists');
+                        fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:ImplementAllButton:rendering',message:'rendering ImplementAll button',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch((e)=>console.error('[DEBUG] Log fetch failed:', e));
+                        // #endregion
+                        try {
+                          return (
+                            <Button
+                              onClick={handleImplementAllFluff}
+                              variant="mono"
+                              size="md"
+                              title="Grey out all FLUFF segments"
+                              className="!bg-[#2563EB] hover:!bg-[#1D4ED8] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
+                            >
+                              Implement All
+                            </Button>
+                          );
+                        } catch (e) {
+                          console.error('[DEBUG] ImplementAllButton: ERROR rendering button', e);
+                          return <div style={{color: 'red', padding: '4px'}}>RENDER ERROR: {String(e)}</div>;
+                        }
+                      })()}
+                      {/* #endregion */}
                       <Button
-                        onClick={handleAcceptSegment}
+                        onClick={() => {
+                          // #region agent log
+                          console.log('[DEBUG] Delete button clicked!', { currentSegmentIndex, segmentsLength: segments.length });
+                          fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:DeleteButton:clicked',message:'Delete button clicked',data:{currentSegmentIndex,segmentsLength:segments.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'CLICK'})}).catch(()=>{});
+                          // #endregion
+                          handleAcceptSegment();
+                        }}
                         variant="primary"
                         size="md"
-                        className="bg-red-600 hover:bg-red-700"
+                        className="!bg-[#DC2626] hover:!bg-[#B91C1C] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
                         title="Delete - Press 'A'"
-                        disabled={cutting || saving}
                       >
-                        {cutting ? "Deleting..." : "Delete"}
+                        Delete
                       </Button>
                       <Button
                         onClick={handleDeclineSegment}
                         variant="mono"
                         size="md"
+                        className="!bg-[#16A34A] hover:!bg-[#15803D] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
                         title="Keep - Press 'D'"
                       >
                         Keep
@@ -1865,10 +2016,7 @@ export default function TimelinePage() {
             activeSequenceId={activeSequenceId}
             onSequenceChange={handleSequenceChange}
             onTrackControlChange={handleTrackControlChange}
-            segments={segments.filter(segment => {
-              const segmentKey = `${segment.start_time}-${segment.end_time}`;
-              return !acceptedSegments.has(segmentKey);
-            })}
+            segments={segments}
             onBladeTool={handleBladeTool}
             onSelectTool={handleSelectTool}
             onTrimTool={handleTrimTool}
@@ -1885,15 +2033,21 @@ export default function TimelinePage() {
             canRedo={canRedo}
             isMac={isMac}
             segmentFilter={segmentFilter}
-            onSegmentFilterChange={(filter: "FLUFF" | "HIGHLIGHTS") => {
+            onSegmentFilterChange={(filter: "FLUFF" | "HIGHLIGHTS" | "ALL") => {
               setSegmentFilter(filter);
               setCurrentSegmentIndex(0);
             }}
             segmentCounts={segmentCounts}
             onPlaybackRateChange={handlePlaybackRateChange}
             playbackRate={playbackRate}
-            acceptedSegments={acceptedSegments}
-            videoUrl={videoUrl}
+            timeline={timeline}
+            onToggleSegmentKeep={toggleSegmentKeep}
+            onImplementAllFluff={handleImplementAllFluff}
+            previousItemPositions={previousItemPositionsRef.current}
+            originalTracks={tracks}
+            videoUrl={versionedVideoUrl}
+            videoId={videoId}
+            gaps={gaps}
             onSplitClip={handleSplitClip}
             onTrimClip={handleTrimClip}
             selectedItemIds={selectedItemIds}
@@ -1918,7 +2072,7 @@ export default function TimelinePage() {
         open={exportDialogOpen}
         onOpenChange={setExportDialogOpen}
         onExport={handleExportVideo}
-        pendingCutsCount={pendingCutsCount}
+        pendingCutsCount={gaps.length}
       />
     </TooltipProvider>
   );

@@ -429,6 +429,7 @@ export async function saveTimeline(
     projectName?: string;
     markers?: Array<{ id: string; time: number; label?: string }>;
     selections?: string[];
+    sequences?: any[];
     currentTime?: number;
     inPoint?: number;
     outPoint?: number;
@@ -455,6 +456,7 @@ export async function getTimeline(videoId: string): Promise<{
   project_name: string | null;
   markers: Array<{ id: string; time: number; label?: string }>;
   selections: string[];
+  sequences: any[];
   current_time: number;
   in_point: number | null;
   out_point: number | null;
@@ -472,6 +474,7 @@ export async function getTimeline(videoId: string): Promise<{
     project_name: string | null;
     markers: Array<{ id: string; time: number; label?: string }>;
     selections: string[];
+    sequences: any[];
     current_time: number;
     in_point: number | null;
     out_point: number | null;

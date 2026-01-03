@@ -1,5 +1,5 @@
    cd backend
-   python3 main.py
+   python main.py
 
    cd main/filmaddict
    npm run dev

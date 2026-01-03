@@ -56,8 +56,10 @@ interface TimelineProps {
   // Playback rate
   onPlaybackRateChange?: (rate: number) => void;
   playbackRate?: number;
-  // Accepted segments (for visual cut indicators)
+  // Accepted segments (for curved edges on adjacent items)
   acceptedSegments?: Set<string>;
+  // Gaps (cut regions) to display as grey overlays
+  gaps?: [number, number][];
   // Video URL for audio waveform generation
   videoUrl?: string;
   // Sequence modification callbacks
@@ -1101,6 +1103,7 @@ function TimelineTrack({
   isHighlightTrack,
   segments,
   cutPoints = new Set<number>(),
+  gaps,
   videoUrl,
   duration,
   selectedItemIds = new Set<string>(),
@@ -1117,6 +1120,7 @@ function TimelineTrack({
   isHighlightTrack: boolean;
   segments?: SegmentAnalysis[];
   cutPoints?: Set<number>;
+  gaps?: [number, number][];
   videoUrl?: string;
   duration?: number;
   selectedItemIds?: Set<string>;
@@ -1179,49 +1183,46 @@ function TimelineTrack({
         );
       })}
       
-      {/* Red lines at cut points */}
-      {Array.from(cutPoints).map((cutTime) => {
-        // Check if cut point is within visible range
-        if (cutTime < startTime || cutTime > endTime) return null;
-        
+      {/* Segment overlays - rendered on top of items, always visible */}
+      {showSegments && segments.map((segment, idx) => (
+        <SegmentOverlay
+          key={`segment-${idx}`}
+          segment={segment}
+          startTime={startTime}
+          endTime={endTime}
+          timelineWidth={timelineWidth}
+        />
+      ))}
+      
+      {/* Gap overlays - show cut/removed regions with grey overlay */}
+      {gaps && gaps.map(([gapStart, gapEnd], idx) => {
         const timeRange = endTime - startTime;
-        if (timeRange <= 0 || timelineWidth <= 0) return null;
+        if (timeRange <= 0) return null;
         
-        const cutPercent = ((cutTime - startTime) / timeRange) * 100;
-        const cutPos = (timelineWidth * cutPercent) / 100;
+        // Only show gaps that are visible in current view
+        if (gapEnd < startTime || gapStart > endTime) return null;
+        
+        const visibleStart = Math.max(gapStart, startTime);
+        const visibleEnd = Math.min(gapEnd, endTime);
+        
+        const leftPercent = ((visibleStart - startTime) / timeRange) * 100;
+        const widthPercent = ((visibleEnd - visibleStart) / timeRange) * 100;
+        const leftPos = (timelineWidth * leftPercent) / 100;
+        const width = Math.max((timelineWidth * widthPercent) / 100, 2);
         
         return (
           <div
-            key={`cut-${cutTime}`}
+            key={`gap-${idx}`}
             className="absolute top-0 bottom-0 pointer-events-none"
             style={{
-              left: `${cutPos}px`,
-              width: '1px',
-              backgroundColor: '#ef4444', // red-500
-              zIndex: 40, // Above everything
+              left: `${leftPos}px`,
+              width: `${width}px`,
+              background: 'rgba(63, 63, 70, 0.85)',
+              borderLeft: '2px solid rgba(82, 82, 91, 0.8)',
+              borderRight: '2px solid rgba(82, 82, 91, 0.8)',
+              zIndex: 35,
             }}
-          />
-        );
-      })}
-      
-      {/* Segment overlays - rendered on top of items, always visible */}
-      {showSegments && segments.map((segment, idx) => {
-        // Log segment info when rendering
-        if (idx === 0) {
-          console.log('Rendering segments on video track:', segments.map(s => ({
-            label: s.label,
-            start: s.start_time,
-            end: s.end_time,
-            duration: `${(s.end_time - s.start_time).toFixed(2)}s`
-          })));
-        }
-        return (
-          <SegmentOverlay
-            key={`segment-${idx}`}
-            segment={segment}
-            startTime={startTime}
-            endTime={endTime}
-            timelineWidth={timelineWidth}
+            title={`Cut: ${gapStart.toFixed(1)}s - ${gapEnd.toFixed(1)}s (skipped)`}
           />
         );
       })}
@@ -1420,6 +1421,7 @@ export function Timeline({
   onPlaybackRateChange,
   playbackRate = 1,
   acceptedSegments,
+  gaps,
   videoUrl,
   onSplitClip,
   onTrimClip,
@@ -1427,7 +1429,7 @@ export function Timeline({
   onItemSelect,
   onMoveItem,
 }: TimelineProps) {
-  // Extract cut points from accepted segments - red lines at both start and end of deleted segments
+  // Extract cut points from accepted segments (both start and end of deleted segments)
   const cutPoints = useMemo(() => {
     const points = new Set<number>();
     if (acceptedSegments) {
@@ -2089,6 +2091,7 @@ export function Timeline({
                   isHighlightTrack={track.trackIndex === 0}
                   segments={track.trackIndex === 0 ? segments : undefined}
                   cutPoints={cutPoints}
+                  gaps={gaps}
                   videoUrl={videoUrl}
                   duration={duration}
                   selectedItemIds={localSelectedItems}
@@ -2111,6 +2114,7 @@ export function Timeline({
                   isHighlightTrack={false}
                   segments={undefined}
                   cutPoints={cutPoints}
+                  gaps={gaps}
                   videoUrl={videoUrl}
                   duration={duration}
                   selectedItemIds={localSelectedItems}

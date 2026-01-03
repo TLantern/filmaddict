@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { auth, currentUser } from "@clerk/nextjs/server";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-12-15.clover",
-});
+function getStripe() {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error("STRIPE_SECRET_KEY is not configured");
+  }
+  return new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: "2025-12-15.clover",
+  });
+}
 
 // Email that bypasses subscription check
 const BYPASS_EMAIL = "teniowojori@gmail.com";
@@ -16,6 +21,16 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ hasSubscription: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    if (!process.env.STRIPE_SECRET_KEY) {
+      const stripeVars = Object.keys(process.env).filter(k => k.includes("STRIPE") || k.includes("stripe"));
+      console.error("❌ STRIPE_SECRET_KEY is missing!");
+      console.error("📋 Available STRIPE-related env vars:", stripeVars.length > 0 ? stripeVars : "NONE FOUND");
+      console.error("💡 Make sure .env.local exists in main/filmaddict/ with STRIPE_SECRET_KEY and restart dev server");
+      return NextResponse.json({ hasSubscription: false, error: "Stripe not configured - check server logs" }, { status: 500 });
+    }
+
+    const stripe = getStripe();
 
     // Check if user email is in bypass list
     const user = await currentUser();

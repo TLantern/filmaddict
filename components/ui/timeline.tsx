@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
-import { Track, TimelineItem, Sequence, SegmentAnalysis } from "@/lib/types";
+import { motion } from "framer-motion";
+import { Track, TimelineItem, Sequence, SegmentAnalysis, EditableSegment } from "@/lib/types";
 import { Button } from "./button-1";
 import { 
   Tooltip,
@@ -9,6 +10,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./tooltip";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "./hover-card";
+import { exportHighlight } from "@/lib/api";
 import { 
   Play, Pause, Lock, LockOpen, Eye, EyeOff, Volume2, VolumeX, Headphones,
   Scissors, MousePointer2, Crop, ZoomIn, ZoomOut, MapPin, Download, 
@@ -50,16 +57,26 @@ interface TimelineProps {
   canRedo?: boolean;
   isMac?: boolean;
   // Filter props
-  segmentFilter?: "FLUFF" | "HIGHLIGHTS";
-  onSegmentFilterChange?: (filter: "FLUFF" | "HIGHLIGHTS") => void;
+  segmentFilter?: "FLUFF" | "HIGHLIGHTS" | "ALL";
+  onSegmentFilterChange?: (filter: "FLUFF" | "HIGHLIGHTS" | "ALL") => void;
   segmentCounts?: Record<"FLUFF" | "HIGHLIGHTS", number>;
   // Playback rate
   onPlaybackRateChange?: (rate: number) => void;
   playbackRate?: number;
-  // Accepted segments (for visual cut indicators)
-  acceptedSegments?: Set<string>;
+  // Editable timeline segments with keep toggle
+  timeline?: EditableSegment[];
+  onToggleSegmentKeep?: (id: string) => void;
+  onImplementAllFluff?: () => void;
+  // Previous item positions for animation
+  previousItemPositions?: Map<string, { start: number; end: number }>;
+  // Original tracks (before adjustment) for adjacent item detection
+  originalTracks?: Track[];
   // Video URL for audio waveform generation
   videoUrl?: string;
+  // Video ID for highlight downloads
+  videoId?: string;
+  // Gaps (removed segments) to show as cut regions on tracks
+  gaps?: [number, number][];
   // Sequence modification callbacks
   onSplitClip?: (sequenceId: string, trackId: string, itemId: string, splitTime: number) => void;
   onTrimClip?: (sequenceId: string, trackId: string, itemId: string, newStart: number, newEnd: number) => void;
@@ -160,6 +177,7 @@ function ToolbarButtons({
   segmentFilter,
   onSegmentFilterChange,
   segmentCounts,
+  onImplementAllFluff,
 }: {
   onBladeTool?: () => void;
   onSelectTool?: () => void;
@@ -176,9 +194,10 @@ function ToolbarButtons({
   canUndo?: boolean;
   canRedo?: boolean;
   isMac?: boolean;
-  segmentFilter?: "FLUFF" | "HIGHLIGHTS";
-  onSegmentFilterChange?: (filter: "FLUFF" | "HIGHLIGHTS") => void;
+  segmentFilter?: "FLUFF" | "HIGHLIGHTS" | "ALL";
+  onSegmentFilterChange?: (filter: "FLUFF" | "HIGHLIGHTS" | "ALL") => void;
   segmentCounts?: Record<"FLUFF" | "HIGHLIGHTS", number>;
+  onImplementAllFluff?: () => void;
 }) {
   return (
     <div className="flex items-center gap-2 border-l border-r border-zinc-700 px-4">
@@ -376,6 +395,16 @@ function ToolbarButtons({
           <div className="w-px h-6 bg-zinc-700 mx-1" />
           <div className="flex items-center gap-2">
             <span className="text-sm text-zinc-400">Filter:</span>
+            <button
+              onClick={() => onSegmentFilterChange("ALL")}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                segmentFilter === "ALL"
+                  ? "bg-transparent border border-white text-white"
+                  : "bg-white text-zinc-900 border border-white"
+              }`}
+            >
+              ALL
+            </button>
             <button
               onClick={() => onSegmentFilterChange("FLUFF")}
               className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
@@ -765,6 +794,9 @@ function TimelineItemComponent({
   isSelected = false,
   trackType = 'video',
   cutPoints = new Set<number>(),
+  isAdjacentToCut = false,
+  previousPosition,
+  isCutSegment = false,
   videoUrl,
   duration,
   activeTool,
@@ -773,6 +805,7 @@ function TimelineItemComponent({
   sequenceId,
   trackId,
   trackLocked = false,
+  videoId,
 }: {
   item: TimelineItem;
   startTime: number;
@@ -783,6 +816,9 @@ function TimelineItemComponent({
   isSelected?: boolean;
   trackType?: 'video' | 'audio';
   cutPoints?: Set<number>;
+  isAdjacentToCut?: boolean;
+  previousPosition?: { start: number; end: number };
+  isCutSegment?: boolean;
   videoUrl?: string;
   duration?: number;
   activeTool?: 'blade' | 'select' | 'trim' | null;
@@ -791,10 +827,21 @@ function TimelineItemComponent({
   sequenceId?: string;
   trackId?: string;
   trackLocked?: boolean;
+  videoId?: string;
 }) {
   const [isDragging, setIsDragging] = useState(false);
+  const [opacity, setOpacity] = useState(1);
   const dragStartRef = useRef<{ startX: number; itemStart: number; itemEnd: number } | null>(null);
   const itemRef = useRef<HTMLDivElement>(null);
+  
+  // Handle cut segment fade out
+  useEffect(() => {
+    if (isCutSegment) {
+      setOpacity(0);
+    } else {
+      setOpacity(1);
+    }
+  }, [isCutSegment]);
 
   const itemDuration = item.end - item.start;
   const canDragItem = canDrag && activeTool === 'select' && !trackLocked && sequenceId && trackId && onMoveItem;
@@ -917,16 +964,65 @@ function TimelineItemComponent({
   const hasCutAtStart = cutPoints.has(item.start);
   const hasCutAtEnd = cutPoints.has(item.end);
   
-  // Calculate border radius for curved ends (more pronounced curve)
-  const borderRadius = hasCutAtStart || hasCutAtEnd ? '12px' : '6px';
-  const borderTopLeftRadius = hasCutAtStart ? '12px' : '6px';
-  const borderTopRightRadius = hasCutAtEnd ? '12px' : '6px';
-  const borderBottomLeftRadius = hasCutAtStart ? '12px' : '6px';
-  const borderBottomRightRadius = hasCutAtEnd ? '12px' : '6px';
+  // Determine which edge should be curved for adjacent items
+  const shouldCurveLeft = isAdjacentToCut && cutPoints.has(item.end);
+  const shouldCurveRight = isAdjacentToCut && cutPoints.has(item.start);
+  
+  // Calculate border radius for curved ends - more pronounced for adjacent items
+  const baseRadius = '6px';
+  const curvedRadius = isAdjacentToCut ? '16px' : '12px';
+  const borderRadius = hasCutAtStart || hasCutAtEnd || isAdjacentToCut ? curvedRadius : baseRadius;
+  const borderTopLeftRadius = (hasCutAtStart || shouldCurveLeft) ? curvedRadius : baseRadius;
+  const borderTopRightRadius = (hasCutAtEnd || shouldCurveRight) ? curvedRadius : baseRadius;
+  const borderBottomLeftRadius = borderTopLeftRadius;
+  const borderBottomRightRadius = borderTopRightRadius;
 
-  return (
-    <div
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownloadHighlight = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoId || !duration || isDownloading) return;
+    
+    try {
+      setIsDownloading(true);
+      const blob = await exportHighlight(videoId, item.start, item.end, duration);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `highlight_${item.start.toFixed(2)}s_${item.end.toFixed(2)}s.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error downloading highlight:", err);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [videoId, duration, item.start, item.end, isDownloading]);
+
+  // Calculate if position changed for animation
+  const hasPositionChanged = previousPosition && (
+    Math.abs(previousPosition.start - item.start) > 0.01 || 
+    Math.abs(previousPosition.end - item.end) > 0.01
+  );
+  
+  // Calculate previous left position if available
+  let previousLeftPos = leftPos;
+  if (previousPosition && hasPositionChanged) {
+    const prevItemStart = Math.max(previousPosition.start, startTime);
+    const prevItemEnd = Math.min(previousPosition.end, endTime);
+    const timeRange = endTime - startTime;
+    if (timeRange > 0 && timelineWidth > 0) {
+      const prevStartPercent = ((prevItemStart - startTime) / timeRange) * 100;
+      previousLeftPos = (timelineWidth * prevStartPercent) / 100;
+    }
+  }
+
+  const itemContent = (
+    <motion.div
       ref={itemRef}
+      layout
       className="absolute border-2 overflow-hidden"
       style={{
         left: `${leftPos}px`,
@@ -946,8 +1042,45 @@ function TimelineItemComponent({
         borderBottomLeftRadius: borderBottomLeftRadius,
         borderBottomRightRadius: borderBottomRightRadius,
         cursor: isDraggable ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
-        opacity: isDragging ? 0.8 : 1,
+        opacity: isDragging ? 0.8 : opacity,
       }}
+      animate={{
+        opacity: isCutSegment ? 0 : (isDragging ? 0.8 : opacity),
+        ...(hasPositionChanged && !isCutSegment ? { left: `${leftPos}px` } : {}),
+      }}
+      transition={
+        (hasPositionChanged && !isCutSegment
+          ? {
+              layout: {
+                type: "spring",
+                stiffness: 300,
+                damping: 30,
+              },
+              left: {
+                duration: 0.25,
+                ease: 'easeOut',
+                delay: 0.1, // 100ms gap before fill animation starts
+              },
+              opacity: { duration: 0 },
+            }
+          : isCutSegment
+          ? {
+              layout: {
+                type: "spring",
+                stiffness: 300,
+                damping: 30,
+              },
+              opacity: { duration: 0.15, ease: 'easeOut' },
+            }
+          : {
+              layout: {
+                type: "spring",
+                stiffness: 300,
+                damping: 30,
+              },
+              opacity: { duration: 0 },
+            }) as any
+      }
       onMouseDown={handleMouseDown}
       onClick={(e) => {
         // For full-length items (starting at 0), don't stop propagation
@@ -986,8 +1119,13 @@ function TimelineItemComponent({
             </div>
           )}
           {trackType === 'video' && (
-            <div className="flex items-center h-full px-2">
+            <div className="flex items-center h-full px-2 relative">
               <span className="text-xs text-white font-medium truncate">{item.title}</span>
+              {isHighlighted && item.rank !== undefined && (
+                <div className="absolute top-1 left-1 flex items-center justify-center min-w-[20px] h-5 px-1 bg-white rounded-full border border-black/30 shadow-md" style={{ zIndex: 50 }}>
+                  <span className="text-xs font-bold text-black leading-none">{item.rank}</span>
+                </div>
+              )}
             </div>
           )}
           <div className="absolute bottom-0 left-0 right-0 text-[10px] text-white/80 px-2 pb-1 font-mono bg-black/20">
@@ -996,28 +1134,67 @@ function TimelineItemComponent({
         </>
       )}
       {displayWidth <= 60 && displayWidth > 8 && (
-        <div className="w-full h-full flex items-center justify-center">
+        <div className="w-full h-full flex items-center justify-center relative">
           <div 
             className="w-2 h-2 rounded-full" 
             style={{ backgroundColor: isVideo ? (isHighlighted ? '#a855f7' : '#779ECB') : '#2E2E33' }}
           />
+          {isHighlighted && item.rank !== undefined && (
+            <div className="absolute top-0 left-0 flex items-center justify-center min-w-[16px] h-4 px-0.5 bg-white rounded-full border border-black/30 shadow-md" style={{ zIndex: 50 }}>
+              <span className="text-[10px] font-bold text-black leading-none">{item.rank}</span>
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </motion.div>
   );
+
+  if (isHighlighted && trackType === 'video' && videoId && duration) {
+    return (
+      <HoverCard openDelay={200}>
+        <HoverCardTrigger asChild>
+          {itemContent}
+        </HoverCardTrigger>
+        <HoverCardContent className="w-auto">
+          <div className="flex flex-col gap-2">
+            <div className="text-sm font-semibold text-white">{item.title}</div>
+            <div className="text-xs text-zinc-400">
+              {secondsToSMPTE(item.start)} - {secondsToSMPTE(item.end)}
+            </div>
+            <Button
+              onClick={handleDownloadHighlight}
+              disabled={isDownloading}
+              variant="primary"
+              size="sm"
+              className="w-full"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              {isDownloading ? "Downloading..." : "Save"}
+            </Button>
+          </div>
+        </HoverCardContent>
+      </HoverCard>
+    );
+  }
+
+  return itemContent;
 }
 
-// SegmentOverlay Component - displays segment labels on video track
+// SegmentOverlay Component - displays segment labels on video track with keep toggle
 function SegmentOverlay({
   segment,
   startTime,
   endTime,
   timelineWidth,
+  timeline,
+  onToggleSegmentKeep,
 }: {
   segment: SegmentAnalysis;
   startTime: number;
   endTime: number;
   timelineWidth: number;
+  timeline?: EditableSegment[];
+  onToggleSegmentKeep?: (id: string) => void;
 }) {
   // Validate segment times
   if (segment.end_time <= segment.start_time || segment.start_time < 0) {
@@ -1039,8 +1216,23 @@ function SegmentOverlay({
   const leftPos = (timelineWidth * startPercent) / 100;
   const segmentWidth = Math.max((timelineWidth * widthPercent) / 100, 4);
 
-  // Color coding based on label
-  const getSegmentColors = (label: string) => {
+  // Find corresponding timeline segment to check keep state
+  const timelineSegment = timeline?.find(t => 
+    Math.abs(t.start - segment.start_time) < 0.01 && 
+    Math.abs(t.end - segment.end_time) < 0.01
+  );
+  const isKept = !timelineSegment || timelineSegment.keep;
+
+  // Color coding based on label and keep state
+  const getSegmentColors = (label: string, kept: boolean) => {
+    if (!kept) {
+      // Removed segments shown with grey (unavailable)
+      return {
+        bg: 'rgba(63, 63, 70, 0.85)', // zinc-700 solid grey
+        border: 'rgba(82, 82, 91, 0.8)', // zinc-600
+        text: 'rgb(113, 113, 122)', // zinc-500
+      };
+    }
     if (label === 'FLUFF') {
       return {
         bg: 'rgba(239, 68, 68, 0.3)', // red-500 with 30% opacity
@@ -1062,28 +1254,57 @@ function SegmentOverlay({
     };
   };
 
-  const colors = getSegmentColors(segment.label);
+  const colors = getSegmentColors(segment.label, isKept);
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (timelineSegment && onToggleSegmentKeep) {
+      onToggleSegmentKeep(timelineSegment.id);
+    }
+  };
 
   return (
     <div
-      className="absolute top-0 bottom-0 border-l border-r pointer-events-none"
+      className={`absolute top-0 bottom-0 border-l border-r cursor-pointer hover:opacity-90 transition-opacity`}
       style={{
         left: `${leftPos}px`,
         width: `${segmentWidth}px`,
-        zIndex: 30, // Above video blocks (which are z-10 or z-20)
+        zIndex: 30,
         backgroundColor: colors.bg,
         borderColor: colors.border,
       }}
-      title={`${segment.label} (${segment.rating.toFixed(2)}): ${segment.reason}`}
+      title={`${segment.label} (${segment.rating.toFixed(2)}): ${segment.reason}\nClick to ${isKept ? 'remove' : 'restore'}`}
+      onClick={handleClick}
     >
+      {/* Grey "unavailable" overlay for cut segments */}
+      {!isKept && (
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'rgba(63, 63, 70, 0.9)',
+            zIndex: 31,
+          }}
+        />
+      )}
       {segmentWidth > 50 && (
-        <div className="absolute top-1 left-1 right-1">
+        <div className="absolute top-1 left-1 right-1 flex items-center justify-between" style={{ zIndex: 32 }}>
           <div 
-            className="text-[10px] font-medium truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+            className={`text-[10px] font-medium truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] ${!isKept ? 'line-through' : ''}`}
             style={{ color: colors.text }}
           >
             {segment.label}
           </div>
+          {segmentWidth > 80 && (
+            <div 
+              className="text-[9px] px-1 rounded"
+              style={{ 
+                backgroundColor: isKept ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.5)',
+                color: isKept ? 'rgb(134, 239, 172)' : 'rgb(252, 165, 165)',
+              }}
+            >
+              {isKept ? 'KEEP' : 'CUT'}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1101,12 +1322,18 @@ function TimelineTrack({
   isHighlightTrack,
   segments,
   cutPoints = new Set<number>(),
+  adjacentItems = new Set<string>(),
+  previousItemPositions,
+  timeline,
+  onToggleSegmentKeep,
   videoUrl,
   duration,
   selectedItemIds = new Set<string>(),
   activeTool,
   onMoveItem,
   sequenceId,
+  videoId,
+  gaps,
 }: {
   track: Track;
   startTime: number;
@@ -1117,12 +1344,18 @@ function TimelineTrack({
   isHighlightTrack: boolean;
   segments?: SegmentAnalysis[];
   cutPoints?: Set<number>;
+  gaps?: [number, number][];
+  adjacentItems?: Set<string>;
+  previousItemPositions?: Map<string, { start: number; end: number }>;
+  timeline?: EditableSegment[];
+  onToggleSegmentKeep?: (id: string) => void;
   videoUrl?: string;
   duration?: number;
   selectedItemIds?: Set<string>;
   activeTool?: 'blade' | 'select' | 'trim' | null;
   onMoveItem?: (sequenceId: string, trackId: string, itemId: string, newStart: number, newEnd: number) => void;
   sequenceId?: string;
+  videoId?: string;
 }) {
   if (!track.visible) {
     return (
@@ -1151,9 +1384,19 @@ function TimelineTrack({
         </div>
       )}
       {track.items.map((item) => {
+        // Check if this item is a removed segment (keep=false in timeline)
+        const timelineSegment = timeline?.find(t => 
+          Math.abs(t.start - item.start) < 0.01 && 
+          Math.abs(t.end - item.end) < 0.01
+        );
+        const isCutSegment = timelineSegment ? !timelineSegment.keep : false;
+        
         // Highlights are always highlighted (green), but no hover effects
         const isHighlighted = item.isHighlight;
         const isSelected = selectedItemIds.has(item.id);
+        const isAdjacent = adjacentItems.has(item.id);
+        const previousPosition = previousItemPositions?.get(item.id);
+        
         return (
           <div key={item.id} className="relative" style={{ zIndex: isSelected ? 30 : (isHighlighted ? 20 : 10) }}>
             <TimelineItemComponent
@@ -1166,6 +1409,9 @@ function TimelineTrack({
               isSelected={isSelected}
               trackType={track.trackType}
               cutPoints={cutPoints}
+              isAdjacentToCut={isAdjacent}
+              previousPosition={previousPosition}
+              isCutSegment={isCutSegment}
               videoUrl={videoUrl}
               duration={duration}
               activeTool={activeTool}
@@ -1174,54 +1420,54 @@ function TimelineTrack({
               sequenceId={sequenceId}
               trackId={track.id}
               trackLocked={track.locked}
+              videoId={videoId}
             />
           </div>
         );
       })}
       
-      {/* Red lines at cut points */}
-      {Array.from(cutPoints).map((cutTime) => {
-        // Check if cut point is within visible range
-        if (cutTime < startTime || cutTime > endTime) return null;
-        
+      {/* Segment overlays - rendered on top of items, clickable for keep toggle */}
+      {showSegments && segments.map((segment, idx) => (
+        <SegmentOverlay
+          key={`segment-${idx}`}
+          segment={segment}
+          startTime={startTime}
+          endTime={endTime}
+          timelineWidth={timelineWidth}
+          timeline={timeline}
+          onToggleSegmentKeep={onToggleSegmentKeep}
+        />
+      ))}
+      
+      {/* Gap overlays - show cut/removed regions with grey overlay */}
+      {gaps && gaps.map(([gapStart, gapEnd], idx) => {
         const timeRange = endTime - startTime;
-        if (timeRange <= 0 || timelineWidth <= 0) return null;
+        if (timeRange <= 0) return null;
         
-        const cutPercent = ((cutTime - startTime) / timeRange) * 100;
-        const cutPos = (timelineWidth * cutPercent) / 100;
+        // Only show gaps that are visible in current view
+        if (gapEnd < startTime || gapStart > endTime) return null;
+        
+        const visibleStart = Math.max(gapStart, startTime);
+        const visibleEnd = Math.min(gapEnd, endTime);
+        
+        const leftPercent = ((visibleStart - startTime) / timeRange) * 100;
+        const widthPercent = ((visibleEnd - visibleStart) / timeRange) * 100;
+        const leftPos = (timelineWidth * leftPercent) / 100;
+        const width = Math.max((timelineWidth * widthPercent) / 100, 2);
         
         return (
           <div
-            key={`cut-${cutTime}`}
+            key={`gap-${idx}`}
             className="absolute top-0 bottom-0 pointer-events-none"
             style={{
-              left: `${cutPos}px`,
-              width: '1px',
-              backgroundColor: '#ef4444', // red-500
-              zIndex: 40, // Above everything
+              left: `${leftPos}px`,
+              width: `${width}px`,
+              background: 'rgba(63, 63, 70, 0.85)',
+              borderLeft: '2px solid rgba(82, 82, 91, 0.8)',
+              borderRight: '2px solid rgba(82, 82, 91, 0.8)',
+              zIndex: 25,
             }}
-          />
-        );
-      })}
-      
-      {/* Segment overlays - rendered on top of items, always visible */}
-      {showSegments && segments.map((segment, idx) => {
-        // Log segment info when rendering
-        if (idx === 0) {
-          console.log('Rendering segments on video track:', segments.map(s => ({
-            label: s.label,
-            start: s.start_time,
-            end: s.end_time,
-            duration: `${(s.end_time - s.start_time).toFixed(2)}s`
-          })));
-        }
-        return (
-          <SegmentOverlay
-            key={`segment-${idx}`}
-            segment={segment}
-            startTime={startTime}
-            endTime={endTime}
-            timelineWidth={timelineWidth}
+            title={`Cut: ${gapStart.toFixed(1)}s - ${gapEnd.toFixed(1)}s (skipped)`}
           />
         );
       })}
@@ -1419,26 +1665,61 @@ export function Timeline({
   segmentCounts,
   onPlaybackRateChange,
   playbackRate = 1,
-  acceptedSegments,
+  timeline,
+  onToggleSegmentKeep,
+  onImplementAllFluff,
+  previousItemPositions,
+  originalTracks,
   videoUrl,
+  videoId,
+  gaps,
   onSplitClip,
   onTrimClip,
   selectedItemIds,
   onItemSelect,
   onMoveItem,
 }: TimelineProps) {
-  // Extract cut points from accepted segments - red lines at both start and end of deleted segments
+  // Extract cut points from segments where keep=false
   const cutPoints = useMemo(() => {
     const points = new Set<number>();
-    if (acceptedSegments) {
-      acceptedSegments.forEach((segmentKey) => {
-        const [start, end] = segmentKey.split('-').map(Number);
-        points.add(start);
-        points.add(end);
+    if (timeline) {
+      timeline.filter(s => !s.keep).forEach((seg) => {
+        points.add(seg.start);
+        points.add(seg.end);
       });
     }
     return points;
-  }, [acceptedSegments]);
+  }, [timeline]);
+
+  // Identify items adjacent to cuts (for curved edges)
+  const adjacentItems = useMemo(() => {
+    const adjacent = new Set<string>();
+    if (!timeline) return adjacent;
+    
+    const removedSegments = timeline.filter(s => !s.keep);
+    if (removedSegments.length === 0) return adjacent;
+    
+    // Use originalTracks if provided, otherwise fall back to legacyTracks
+    const tracksToCheck = originalTracks || legacyTracks;
+    if (!tracksToCheck || tracksToCheck.length === 0) return adjacent;
+    
+    // Get all items from original tracks
+    const allOriginalItems = tracksToCheck.flatMap(t => t.items);
+    
+    // For each removed segment, find adjacent items
+    removedSegments.forEach((seg) => {
+      allOriginalItems.forEach(item => {
+        if (Math.abs(item.end - seg.start) < 0.01) {
+          adjacent.add(item.id);
+        }
+        if (Math.abs(item.start - seg.end) < 0.01) {
+          adjacent.add(item.id);
+        }
+      });
+    });
+    
+    return adjacent;
+  }, [timeline, originalTracks, legacyTracks]);
 
   // Create default sequence from legacy tracks or use provided sequences
   const defaultSequence = useMemo<Sequence | null>(() => {
@@ -1712,7 +1993,17 @@ export function Timeline({
       const x = e.clientX - rect.left;
       const percent = Math.max(0, Math.min(1, x / timelineWidth));
       const newTime = startTime + percent * (endTime - startTime);
-      const clampedTime = Math.max(0, Math.min(duration, newTime));
+      let clampedTime = Math.max(0, Math.min(duration, newTime));
+      
+      // Skip over gaps - if dragging into a gap, move to end of gap
+      if (gaps && gaps.length > 0) {
+        for (const [gapStart, gapEnd] of gaps) {
+          if (clampedTime >= gapStart && clampedTime < gapEnd) {
+            clampedTime = gapEnd;
+            break;
+          }
+        }
+      }
       
       // Update local time immediately for smooth dragging
       setLocalCurrentTime(clampedTime);
@@ -1747,7 +2038,7 @@ export function Timeline({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isPlayheadDragging, timelineWidth, startTime, endTime, duration, onSeek]);
+  }, [isPlayheadDragging, timelineWidth, startTime, endTime, duration, onSeek, gaps]);
 
   const handleTimelineMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (isPlayheadDragging || !timelineAreaRef.current) return;
@@ -1790,7 +2081,18 @@ export function Timeline({
     
     const percent = Math.max(0, Math.min(1, adjustedX / timelineWidth));
     const clickedTime = startTime + percent * (endTime - startTime);
-    const clampedTime = Math.max(0, Math.min(duration, clickedTime));
+    let clampedTime = Math.max(0, Math.min(duration, clickedTime));
+
+    // Check if clicked time is in a gap - if so, skip to end of gap
+    if (gaps && gaps.length > 0) {
+      for (const [gapStart, gapEnd] of gaps) {
+        if (clampedTime >= gapStart && clampedTime < gapEnd) {
+          // Clicked in a gap - move to end of gap
+          clampedTime = gapEnd;
+          break;
+        }
+      }
+    }
 
     // Handle blade tool: Split clips at clicked time
     if (activeTool === 'blade' && onSplitClip && activeSequence) {
@@ -1898,6 +2200,7 @@ export function Timeline({
             segmentFilter={segmentFilter}
             onSegmentFilterChange={onSegmentFilterChange}
             segmentCounts={segmentCounts}
+            onImplementAllFluff={onImplementAllFluff}
           />
         </div>
         
@@ -2089,12 +2392,18 @@ export function Timeline({
                   isHighlightTrack={track.trackIndex === 0}
                   segments={track.trackIndex === 0 ? segments : undefined}
                   cutPoints={cutPoints}
+                  adjacentItems={adjacentItems}
+                  previousItemPositions={previousItemPositions}
+                  timeline={timeline}
+                  onToggleSegmentKeep={onToggleSegmentKeep}
                   videoUrl={videoUrl}
                   duration={duration}
                   selectedItemIds={localSelectedItems}
                   activeTool={activeTool}
                   onMoveItem={onMoveItem}
                   sequenceId={activeSeqId}
+                  videoId={videoId}
+                  gaps={gaps}
                 />
               ))}
               
@@ -2111,12 +2420,18 @@ export function Timeline({
                   isHighlightTrack={false}
                   segments={undefined}
                   cutPoints={cutPoints}
+                  adjacentItems={adjacentItems}
+                  previousItemPositions={previousItemPositions}
+                  timeline={timeline}
+                  onToggleSegmentKeep={onToggleSegmentKeep}
                   videoUrl={videoUrl}
                   duration={duration}
                   selectedItemIds={localSelectedItems}
                   activeTool={activeTool}
                   onMoveItem={onMoveItem}
                   sequenceId={activeSeqId}
+                  videoId={videoId}
+                  gaps={gaps}
                 />
               ))}
             </div>

@@ -102,6 +102,15 @@ export async function getVideoStatus(videoId: string): Promise<VideoStatusRespon
   return data;
 }
 
+export async function precacheVideo(videoId: string): Promise<{ status: string; video_id: string }> {
+  const url = `${getApiBaseUrl()}/videos/${videoId}/precache`;
+  const response = await fetchWithErrorHandling(url, {
+    method: "POST",
+    headers: getHeaders(),
+  });
+  return handleResponse<{ status: string; video_id: string }>(response);
+}
+
 export async function getHighlights(videoId: string): Promise<HighlightsResponse> {
   const url = `${getApiBaseUrl()}/videos/${videoId}/highlights`;
   console.log(`[API] Fetching highlights from: ${url}`);
@@ -384,6 +393,25 @@ export async function exportVideo(
   return response.blob();
 }
 
+export async function exportHighlight(
+  videoId: string,
+  startTime: number,
+  endTime: number,
+  duration: number
+): Promise<Blob> {
+  const segmentsToRemove: Array<{ start_time: number; end_time: number }> = [];
+  
+  if (startTime > 0) {
+    segmentsToRemove.push({ start_time: 0, end_time: startTime });
+  }
+  
+  if (endTime < duration) {
+    segmentsToRemove.push({ start_time: endTime, end_time: duration });
+  }
+  
+  return exportVideo(videoId, "mp4", segmentsToRemove);
+}
+
 export async function reprocessVideo(
   videoId: string
 ): Promise<{ status: string; video_id: string; message: string }> {
@@ -392,6 +420,19 @@ export async function reprocessVideo(
     headers: getHeaders(),
   });
   return handleResponse<{ status: string; video_id: string; message: string }>(response);
+}
+
+export async function keepSegment(
+  videoId: string,
+  segmentId: string
+): Promise<{ status: string; message: string }> {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/segments/${segmentId}/keep`, {
+    method: "POST",
+    headers: getHeaders({
+      "Content-Type": "application/json",
+    }),
+  });
+  return handleResponse<{ status: string; message: string }>(response);
 }
 
 export async function submitSegmentFeedback(
@@ -429,6 +470,7 @@ export async function saveTimeline(
     projectName?: string;
     markers?: Array<{ id: string; time: number; label?: string }>;
     selections?: string[];
+    sequences?: any[];
     currentTime?: number;
     inPoint?: number;
     outPoint?: number;
@@ -455,6 +497,7 @@ export async function getTimeline(videoId: string): Promise<{
   project_name: string | null;
   markers: Array<{ id: string; time: number; label?: string }>;
   selections: string[];
+  sequences: any[];
   current_time: number;
   in_point: number | null;
   out_point: number | null;
@@ -472,6 +515,7 @@ export async function getTimeline(videoId: string): Promise<{
     project_name: string | null;
     markers: Array<{ id: string; time: number; label?: string }>;
     selections: string[];
+    sequences: any[];
     current_time: number;
     in_point: number | null;
     out_point: number | null;

@@ -102,7 +102,7 @@ export default function LandingPage() {
                   Continue with Google
                 </Button>
                 <ButtonIconHoverDemo 
-                  className="bg-[#e3b54a] hover:bg-[#d1a643] text-white font-bold"
+                  className="bg-[#e3b54a] hover:bg-[#d1a643] text-black border border-[#b8922f] font-bold"
                   onClick={handleTrialAuth}
                   disabled={!signInLoaded}
                 >

@@ -90,7 +90,8 @@ export interface TimelineItem {
   end: number;
   title: string;
   momentUrl: string;
-  isHighlight?: boolean; // Mark highlights for green color on timeline
+  isHighlight?: boolean; // Mark highlights for purple color on timeline
+  rank?: number; // Rank number for highlights (1 = best, 2 = second best, etc.)
 }
 
 export interface Track {
@@ -122,6 +123,18 @@ export interface TranscriptResponse {
   video_id: string;
   segments: TranscriptSegment[];
 }
+
+// EDL-based segment with keep toggle for instant timeline editing
+export interface EditableSegment {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  keep: boolean;
+}
+
+export type EDL = [number, number][];  // kept regions
+export type Gaps = [number, number][]; // removed regions (inverse of EDL)
 
 export type VerdictType = "FLUFF" | "HIGHLIGHT";
 export type ConfidenceLevel = "low" | "medium" | "high";

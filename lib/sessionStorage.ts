@@ -4,6 +4,7 @@ export interface EditingSessionState {
   pendingCuts: Array<{ start_time: number; end_time: number }>;
   markers: Array<{ id: string; time: number; label?: string }>;
   selections: string[]; // Selected clip/segment IDs
+  sequences?: any[];
   zoom: number;
   currentTime: number;
   inPoint?: number;
@@ -24,6 +25,7 @@ export async function saveEditingSession(videoId: string, state: Partial<Editing
       projectName: state.projectName,
       markers: state.markers,
       selections: state.selections,
+      sequences: state.sequences,
       currentTime: state.currentTime,
       inPoint: state.inPoint,
       outPoint: state.outPoint,
@@ -62,6 +64,7 @@ export async function loadEditingSession(videoId: string): Promise<EditingSessio
       pendingCuts: [], // pendingCuts are stored separately in video.pending_cuts
       markers: timeline.markers || [],
       selections: timeline.selections || [],
+      sequences: timeline.sequences || [],
       zoom: timeline.zoom || 1,
       currentTime: timeline.current_time || 0,
       inPoint: timeline.in_point ?? undefined,

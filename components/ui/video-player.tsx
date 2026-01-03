@@ -28,6 +28,23 @@ interface VideoPlayerProps {
     end_time?: number;
     rating?: number;
   };
+  // gaps prop kept for backward compatibility but no longer used for skipping
+  // Gap-skipping is now handled by TimelineEngine in the parent component
+  gaps?: [number, number][];
+  // Active transcript segments (only segments with keep=true)
+  activeTranscript?: { start: number; end: number; text: string }[];
+}
+
+/**
+ * Find if current time is inside a gap, return exit time if so.
+ */
+function findGapExit(time: number, gaps: [number, number][]): number | null {
+  for (const [start, end] of gaps) {
+    if (time >= start && time < end) {
+      return end;
+    }
+  }
+  return null;
 }
 
 export interface VideoPlayerRef {
@@ -55,7 +72,7 @@ function formatTime(seconds: number): string {
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
-  ({ src, videoId, onTimeUpdate, onDurationChange, className = "", explanation, currentSegment }, ref) => {
+  ({ src, videoId, onTimeUpdate, onDurationChange, className = "", explanation, currentSegment, gaps, activeTranscript }, ref) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const segmentRefs = useRef<Map<number, HTMLDivElement>>(new Map());
     const transcriptScrollRef = useRef<HTMLDivElement>(null);
@@ -70,6 +87,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
     const FRAME_RATE = 30;
     const FRAME_DURATION = 1 / FRAME_RATE;
+
+    // Store gaps in ref to avoid recreating event handlers
+    const gapsRef = useRef(gaps);
+    useEffect(() => {
+      gapsRef.current = gaps;
+    }, [gaps]);
 
     useImperativeHandle(ref, () => ({
       play: () => {
@@ -91,7 +114,16 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       },
       seek: (time: number) => {
         if (videoRef.current) {
-          videoRef.current.currentTime = time;
+          // Skip out of gaps when seeking
+          let targetTime = time;
+          const currentGaps = gapsRef.current;
+          if (currentGaps && currentGaps.length > 0) {
+            const exitTime = findGapExit(time, currentGaps);
+            if (exitTime !== null) {
+              targetTime = exitTime;
+            }
+          }
+          videoRef.current.currentTime = targetTime;
         }
       },
       getCurrentTime: () => {
@@ -149,6 +181,17 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
       const handleTimeUpdate = () => {
         const time = video.currentTime;
+        
+        // Skip gaps (removed regions) during playback
+        const currentGaps = gapsRef.current;
+        if (currentGaps && currentGaps.length > 0) {
+          const exitTime = findGapExit(time, currentGaps);
+          if (exitTime !== null) {
+            video.currentTime = exitTime;
+            return; // Don't update state until we're in valid region
+          }
+        }
+        
         setCurrentTime(time);
         onTimeUpdate?.(time);
       };
@@ -188,7 +231,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         video.removeEventListener("loadedmetadata", handleDurationChange);
         document.removeEventListener("keydown", handleKeyDown);
       };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [onTimeUpdate, onDurationChange]);
 
     useEffect(() => {
@@ -210,8 +252,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       }
     }, [videoId]);
 
+    // Use activeTranscript if provided, otherwise use fetched transcript
+    const displayTranscript = activeTranscript || transcript;
+
     const getCurrentTranscriptSegment = () => {
-      return transcript.find(
+      return displayTranscript.find(
         (segment) => currentTime >= segment.start && currentTime <= segment.end
       );
     };
@@ -219,7 +264,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     useEffect(() => {
       const activeSegment = getCurrentTranscriptSegment();
       if (activeSegment) {
-        const segmentIndex = transcript.findIndex((s) => s === activeSegment);
+        const segmentIndex = displayTranscript.findIndex((s) => s === activeSegment);
         const segmentElement = segmentRefs.current.get(segmentIndex);
         if (segmentElement) {
           isAutoScrollingRef.current = true;
@@ -232,7 +277,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           }, 500);
         }
       }
-    }, [currentTime, transcript]);
+    }, [currentTime, displayTranscript]);
 
     const handleTranscriptScroll = () => {
       setShowScrollbars(true);
@@ -277,13 +322,13 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                     maxWidth: '100%'
                   }}
                 >
-                  {transcriptLoading ? (
+                  {transcriptLoading && !activeTranscript ? (
                     <div className="text-zinc-400 text-sm">Loading transcript...</div>
-                  ) : transcript.length === 0 ? (
+                  ) : displayTranscript.length === 0 ? (
                     <div className="text-zinc-400 text-sm">No transcript available</div>
                   ) : (
                     <div className="space-y-3">
-                      {transcript.map((segment, index) => {
+                      {displayTranscript.map((segment, index) => {
                         const isActive = getCurrentTranscriptSegment() === segment;
                         return (
                           <div
@@ -333,13 +378,43 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
               onError={(e) => {
                 const video = e.currentTarget;
                 const error = video.error;
-                console.error('Video playback error:', {
+                
+                const errorCodeMap: Record<number, string> = {
+                  1: 'MEDIA_ERR_ABORTED',
+                  2: 'MEDIA_ERR_NETWORK',
+                  3: 'MEDIA_ERR_DECODE',
+                  4: 'MEDIA_ERR_SRC_NOT_SUPPORTED',
+                };
+                
+                const networkStateMap: Record<number, string> = {
+                  0: 'NETWORK_EMPTY',
+                  1: 'NETWORK_IDLE',
+                  2: 'NETWORK_LOADING',
+                  3: 'NETWORK_NO_SOURCE',
+                };
+                
+                const readyStateMap: Record<number, string> = {
+                  0: 'HAVE_NOTHING',
+                  1: 'HAVE_METADATA',
+                  2: 'HAVE_CURRENT_DATA',
+                  3: 'HAVE_FUTURE_DATA',
+                  4: 'HAVE_ENOUGH_DATA',
+                };
+                
+                const errorInfo: Record<string, any> = {
                   src: video.src,
-                  errorCode: error?.code,
-                  errorMessage: error?.message,
-                  networkState: video.networkState,
-                  readyState: video.readyState,
-                });
+                  networkState: `${video.networkState} (${networkStateMap[video.networkState] || 'UNKNOWN'})`,
+                  readyState: `${video.readyState} (${readyStateMap[video.readyState] || 'UNKNOWN'})`,
+                };
+                
+                if (error) {
+                  errorInfo.errorCode = `${error.code} (${errorCodeMap[error.code] || 'UNKNOWN'})`;
+                  errorInfo.errorMessage = error.message || 'No error message available';
+                } else {
+                  errorInfo.error = 'No error object available (error is null)';
+                }
+                
+                console.error('Video playback error:', errorInfo);
               }}
               onLoadStart={() => console.log('Video load started:', src)}
               onLoadedMetadata={() => console.log('Video metadata loaded:', src)}
