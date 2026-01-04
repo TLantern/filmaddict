@@ -536,8 +536,8 @@ export default function TimelinePage() {
     if (playerRef.current) {
       let seekTime = time;
       
-      // Check if seek time is in a gap - if so, skip to end of gap
-      if (gaps.length > 0) {
+      // Only skip gaps when NOT viewing "ALL" filter - allow seeking to unmarked segments in "ALL" mode
+      if (segmentFilter !== "ALL" && gaps.length > 0) {
         for (const [gapStart, gapEnd] of gaps) {
           if (seekTime >= gapStart && seekTime < gapEnd) {
             seekTime = gapEnd;
@@ -548,12 +548,12 @@ export default function TimelinePage() {
       
       playerRef.current.seek(seekTime);
     }
-  }, [gaps]);
+  }, [gaps, segmentFilter]);
 
   const handleTimeUpdate = useCallback((time: number) => {
     // Engine-driven gap skipping
-    // Use resolve() to check if current time is in a gap
-    if (engineRef.current && playerRef.current) {
+    // Only skip gaps when NOT viewing "ALL" filter - unmarked segments should play normally in "ALL" mode
+    if (segmentFilter !== "ALL" && engineRef.current && playerRef.current) {
       const frame = engineRef.current.resolve(time, 'video');
       
       if (frame.isGap) {
@@ -571,7 +571,7 @@ export default function TimelinePage() {
     }
     
     setCurrentTime(time);
-  }, []);
+  }, [segmentFilter]);
 
   const handleDurationChange = (dur: number) => {
     if (dur > 0) {
