@@ -274,8 +274,9 @@ export default function TimelinePage() {
       setSegments(validSegments);
       
       // Initialize timeline with editable segments (all keep=true by default)
+      // Include both FLUFF segments AND highlights so both can be toggled
       // Match transcript text to each segment based on time overlap
-      const editableSegments: EditableSegment[] = validSegments.map((seg, idx) => {
+      const fluffEditableSegments: EditableSegment[] = validSegments.map((seg, idx) => {
         // Find transcript segments that overlap with this segment
         const overlappingTranscript = transcriptData.segments.filter(t => 
           t.start < seg.end_time && t.end > seg.start_time
@@ -290,6 +291,26 @@ export default function TimelinePage() {
           keep: true,
         };
       });
+      
+      // Add highlights as editable segments so they can be toggled
+      const highlightEditableSegments: EditableSegment[] = highlightsData.highlights.map((highlight, idx) => {
+        // Find transcript segments that overlap with this highlight
+        const overlappingTranscript = transcriptData.segments.filter(t => 
+          t.start < highlight.end && t.end > highlight.start
+        );
+        const text = overlappingTranscript.map(t => t.text).join(" ").trim();
+        
+        return {
+          id: `highlight-${idx}`,
+          start: highlight.start,
+          end: highlight.end,
+          text: text || highlight.summary || highlight.title || "",
+          keep: true,
+        };
+      });
+      
+      // Combine all segments for timeline engine
+      const editableSegments: EditableSegment[] = [...fluffEditableSegments, ...highlightEditableSegments];
       
       // === INITIALIZE TIMELINE ENGINE ===
       // Create engine from segments and subscribe to updates
@@ -1408,19 +1429,12 @@ export default function TimelinePage() {
       filtered = [...fluffSegments, ...highlightSegments];
     }
     
-    // Filter based on keep state in timeline
-    const beforeFilterCount = filtered.length;
-    filtered = filtered.filter((segment: SegmentAnalysis) => {
-      const timelineSegment = timeline.find(t => 
-        Math.abs(t.start - segment.start_time) < 0.01 && 
-        Math.abs(t.end - segment.end_time) < 0.01
-      );
-      return !timelineSegment || timelineSegment.keep;
-    });
+    // Don't filter out disabled segments - they should still be shown but greyed out
+    // The timeline overlay component handles the visual state based on keep property
+    // This allows users to see and re-enable segments they've disabled
     
     console.log('[segments filter effect] segmentFilter:', segmentFilter);
-    console.log('[segments filter effect] before keep filter:', beforeFilterCount, 'after:', filtered.length);
-    console.log('[segments filter effect] removed segments:', timeline.filter(t => !t.keep).map(t => ({ id: t.id, start: t.start, end: t.end })));
+    console.log('[segments filter effect] filtered segments:', filtered.length);
     
     setSegments(filtered);
   }, [segmentFilter, allSegments, timeline, highlights]);
