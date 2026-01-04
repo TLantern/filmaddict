@@ -616,38 +616,45 @@ export default function TimelinePage() {
     }
   };
 
-  // Toggle current segment's keep state (instant, no backend)
+  // Delete current segment - disable it (turn grey/shaded)
   const handleAcceptSegment = useCallback(() => {
-    console.log('[handleAcceptSegment] called, currentSegmentIndex:', currentSegmentIndex, 'segments.length:', segments.length);
     if (currentSegmentIndex < 0 || currentSegmentIndex >= segments.length) return;
     
     const segment = segments[currentSegmentIndex];
-    const segmentId = segment.id || `segment-${currentSegmentIndex}`;
-    console.log('[handleAcceptSegment] segment:', { id: segmentId, start: segment.start_time, end: segment.end_time, label: segment.label });
     
-    // Find matching timeline segment and toggle its keep state
+    // Find matching timeline segment and disable it
     const timelineSegment = timeline.find(t => 
       Math.abs(t.start - segment.start_time) < 0.01 && 
       Math.abs(t.end - segment.end_time) < 0.01
     );
     
-    console.log('[handleAcceptSegment] timelineSegment found:', timelineSegment ? { id: timelineSegment.id, keep: timelineSegment.keep } : null);
-    
-    if (timelineSegment) {
+    if (timelineSegment && timelineSegment.keep) {
+      // Only disable if it's currently enabled
       toggleSegmentKeep(timelineSegment.id);
     }
     
     // Don't auto-advance - user must click Next/Prev to navigate
   }, [currentSegmentIndex, segments, timeline, toggleSegmentKeep]);
 
-  // Decline segment - just advance to next (keep is already true by default)
+  // Keep current segment - enable it (unshade it)
   const handleDeclineSegment = useCallback(() => {
-    if (currentSegmentIndex < segments.length - 1) {
-      navigateToSegment(currentSegmentIndex + 1);
-    } else {
-      navigateToSegment(0);
+    if (currentSegmentIndex < 0 || currentSegmentIndex >= segments.length) return;
+    
+    const segment = segments[currentSegmentIndex];
+    
+    // Find matching timeline segment and enable it
+    const timelineSegment = timeline.find(t => 
+      Math.abs(t.start - segment.start_time) < 0.01 && 
+      Math.abs(t.end - segment.end_time) < 0.01
+    );
+    
+    if (timelineSegment && !timelineSegment.keep) {
+      // Only enable if it's currently disabled
+      toggleSegmentKeep(timelineSegment.id);
     }
-  }, [currentSegmentIndex, segments.length, navigateToSegment]);
+    
+    // Don't auto-advance - user must click Next/Prev to navigate
+  }, [currentSegmentIndex, segments, timeline, toggleSegmentKeep]);
 
   const handleSegmentFeedback = async (feedbackType: "GREAT" | "FINE" | "WRONG") => {
     if (currentSegmentIndex < 0 || currentSegmentIndex >= segments.length) return;
@@ -1883,9 +1890,9 @@ export default function TimelinePage() {
                                 setShowOnboarding(true);
                                 setOnboardingSlide(0);
                               }}
-                              className="w-7 h-7 rounded-full border border-zinc-600 bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors"
+                              className="w-7 h-7 rounded-full border border-[#FFD873]/30 bg-[#FFD873]/20 hover:bg-[#FFD873]/30 flex items-center justify-center transition-colors"
                             >
-                              <Info className="w-4 h-4 text-zinc-400" />
+                              <Info className="w-4 h-4 text-[#FFD873]" />
                             </button>
                           </TooltipTrigger>
                           <TooltipContent>
@@ -2007,7 +2014,7 @@ export default function TimelinePage() {
         pendingCutsCount={gaps.length}
       />
       <Dialog open={showOnboarding} onOpenChange={setShowOnboarding}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogContent className="sm:max-w-[450px] max-h-[70vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>How to Use the Editor</span>
@@ -2022,142 +2029,63 @@ export default function TimelinePage() {
           
           <div className="flex-1 overflow-y-auto py-4">
             {onboardingSlide === 0 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white">Welcome to the Video Editor</h3>
-                <p className="text-zinc-300">
-                  This editor helps you quickly review and edit your video by marking segments as "FLUFF" (to remove) or "HIGHLIGHTS" (to keep).
+              <div className="space-y-3">
+                <h3 className="text-base font-semibold text-white">Getting Started</h3>
+                <p className="text-sm text-zinc-300">
+                  Review and mark segments: <span className="text-red-400">FLUFF</span> (remove) or <span className="text-purple-400">HIGHLIGHTS</span> (keep).
                 </p>
-                <div className="bg-zinc-800 rounded-lg p-4 space-y-2">
-                  <h4 className="font-medium text-white">Key Features:</h4>
-                  <ul className="list-disc list-inside space-y-1 text-zinc-300 text-sm">
-                    <li>Review segments one by one or click on the timeline</li>
-                    <li>Mark FLUFF segments to remove unwanted content</li>
-                    <li>Keep HIGHLIGHTS to preserve the best moments</li>
-                    <li>Use filters to view FLUFF, HIGHLIGHTS, or ALL segments</li>
-                  </ul>
+                <div className="space-y-2 text-sm text-zinc-400">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-red-500/50"></div>
+                    <span>Red = FLUFF (to remove)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-purple-500/50"></div>
+                    <span>Purple = HIGHLIGHTS (to keep)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded bg-zinc-600"></div>
+                    <span>Grey = Disabled</span>
+                  </div>
                 </div>
               </div>
             )}
             
             {onboardingSlide === 1 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white">Timeline Overview</h3>
-                <p className="text-zinc-300">
-                  The timeline at the bottom shows all your video segments:
+              <div className="space-y-3">
+                <h3 className="text-base font-semibold text-white">Controls</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between bg-zinc-800 rounded p-2">
+                    <span className="text-zinc-300">Delete button</span>
+                    <span className="text-zinc-400 text-xs">Disables segment</span>
+                  </div>
+                  <div className="flex items-center justify-between bg-zinc-800 rounded p-2">
+                    <span className="text-zinc-300">Keep button</span>
+                    <span className="text-zinc-400 text-xs">Enables segment</span>
+                  </div>
+                  <div className="flex items-center justify-between bg-zinc-800 rounded p-2">
+                    <span className="text-zinc-300">Implement All</span>
+                    <span className="text-zinc-400 text-xs">Disable all FLUFF</span>
+                  </div>
+                </div>
+                <p className="text-xs text-zinc-400 mt-2">
+                  Use Prev/Next to navigate. When playhead is on a segment, Delete/Keep control it.
                 </p>
-                <div className="space-y-3">
-                  <div className="bg-red-500/20 border border-red-500/50 rounded p-3">
-                    <p className="text-sm text-red-300"><span className="font-medium">Red segments</span> = FLUFF (suggested for removal)</p>
-                  </div>
-                  <div className="bg-purple-500/20 border border-purple-500/50 rounded p-3">
-                    <p className="text-sm text-purple-300"><span className="font-medium">Purple segments</span> = HIGHLIGHTS (suggested to keep)</p>
-                  </div>
-                  <div className="bg-zinc-700/50 border border-zinc-600 rounded p-3">
-                    <p className="text-sm text-zinc-400"><span className="font-medium">Grey segments</span> = Disabled/Removed segments</p>
-                  </div>
-                </div>
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 space-y-2">
-                  <h4 className="font-medium text-white">Click to Enable/Disable</h4>
-                  <p className="text-sm text-zinc-300">
-                    <strong>Click any FLUFF segment</strong> (red) on the timeline to toggle it:
-                  </p>
-                  <ul className="list-disc list-inside space-y-1 text-sm text-zinc-300 ml-2">
-                    <li><strong>First click:</strong> Disables the segment (turns grey) - it will be removed in export</li>
-                    <li><strong>Click again:</strong> Re-enables the segment (turns red again) - it will be kept in export</li>
-                  </ul>
-                  <p className="text-xs text-zinc-400 mt-2">
-                    Note: HIGHLIGHTS segments cannot be disabled - they're protected to preserve your best moments.
-                  </p>
-                </div>
               </div>
             )}
             
             {onboardingSlide === 2 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white">Reviewing Segments</h3>
-                <p className="text-zinc-300">
-                  Use the segment review controls to navigate through your video:
+              <div className="space-y-3">
+                <h3 className="text-base font-semibold text-white">Export</h3>
+                <div className="space-y-2 text-sm text-zinc-300">
+                  <p>1. Click <strong className="text-white">Export</strong> in toolbar ({isMac ? '⌘' : 'Ctrl'} + E)</p>
+                  <p>2. Choose format</p>
+                  <p>3. Wait 5-10 minutes</p>
+                  <p>4. Download edited video</p>
+                </div>
+                <p className="text-xs text-zinc-400 mt-2">
+                  Changes are preview-only until export.
                 </p>
-                <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-16 h-8 bg-zinc-700 rounded text-xs flex items-center justify-center text-white">← Prev</div>
-                    <span className="text-sm text-zinc-300">Navigate to previous segment</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-16 h-8 bg-zinc-700 rounded text-xs flex items-center justify-center text-white">Next →</div>
-                    <span className="text-sm text-zinc-300">Navigate to next segment</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-24 h-8 bg-red-600 rounded text-xs flex items-center justify-center text-white">Delete</div>
-                    <span className="text-sm text-zinc-300">Remove current segment (or press 'A')</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-20 h-8 bg-green-600 rounded text-xs flex items-center justify-center text-white">Keep</div>
-                    <span className="text-sm text-zinc-300">Keep current segment (or press 'D')</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-28 h-8 bg-blue-600 rounded text-xs flex items-center justify-center text-white">Implement All</div>
-                    <span className="text-sm text-zinc-300">Quickly disable all FLUFF segments at once</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {onboardingSlide === 3 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white">Filters</h3>
-                <p className="text-zinc-300">
-                  Use the filter buttons to focus on specific segment types:
-                </p>
-                <div className="space-y-3">
-                  <div className="bg-zinc-800 rounded-lg p-4">
-                    <h4 className="font-medium text-white mb-2">ALL</h4>
-                    <p className="text-sm text-zinc-300">Shows all segments (FLUFF and HIGHLIGHTS). All video content plays normally.</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-4">
-                    <h4 className="font-medium text-white mb-2">FLUFF</h4>
-                    <p className="text-sm text-zinc-300">Shows only segments suggested for removal. Gap-skipping is enabled during playback.</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-4">
-                    <h4 className="font-medium text-white mb-2">HIGHLIGHTS</h4>
-                    <p className="text-sm text-zinc-300">Shows only highlight segments. These cannot be disabled or removed.</p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {onboardingSlide === 4 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white">Exporting Your Video</h3>
-                <p className="text-zinc-300">
-                  Once you've marked all the segments you want to remove:
-                </p>
-                <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <span className="text-lg">1.</span>
-                    <div>
-                      <p className="text-sm text-zinc-300">Click the <strong className="text-white">Export</strong> button in the top toolbar</p>
-                      <p className="text-xs text-zinc-400 mt-1">Keyboard shortcut: {isMac ? '⌘' : 'Ctrl'} + E</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <span className="text-lg">2.</span>
-                    <p className="text-sm text-zinc-300">Choose your export format (MP4, MOV, WebM, etc.)</p>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <span className="text-lg">3.</span>
-                    <p className="text-sm text-zinc-300">Wait for processing (typically 5-10 minutes)</p>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <span className="text-lg">4.</span>
-                    <p className="text-sm text-zinc-300">Download your edited video with all marked segments removed</p>
-                  </div>
-                </div>
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded p-3">
-                  <p className="text-sm text-blue-300">
-                    <strong>Note:</strong> Changes are preview-only until you export. Exporting applies all your edits to create the final video.
-                  </p>
-                </div>
               </div>
             )}
           </div>
@@ -2166,13 +2094,13 @@ export default function TimelinePage() {
             <button
               onClick={() => setOnboardingSlide(Math.max(0, onboardingSlide - 1))}
               disabled={onboardingSlide === 0}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-300 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-300 transition-colors text-sm"
             >
               <ChevronLeft className="w-4 h-4" />
-              Previous
+              Prev
             </button>
             <div className="flex items-center gap-2">
-              {[0, 1, 2, 3, 4].map((index) => (
+              {[0, 1, 2].map((index) => (
                 <button
                   key={index}
                   onClick={() => setOnboardingSlide(index)}
@@ -2182,10 +2110,10 @@ export default function TimelinePage() {
                 />
               ))}
             </div>
-            {onboardingSlide < 4 ? (
+            {onboardingSlide < 2 ? (
               <button
                 onClick={() => setOnboardingSlide(onboardingSlide + 1)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+                className="flex items-center gap-2 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors text-sm"
               >
                 Next
                 <ChevronRight className="w-4 h-4" />
@@ -2193,7 +2121,7 @@ export default function TimelinePage() {
             ) : (
               <button
                 onClick={() => setShowOnboarding(false)}
-                className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white transition-colors"
+                className="px-4 py-1.5 rounded bg-purple-600 hover:bg-purple-700 text-white transition-colors text-sm"
               >
                 Got it!
               </button>

@@ -1181,21 +1181,19 @@ function TimelineItemComponent({
   return itemContent;
 }
 
-// SegmentOverlay Component - displays segment labels on video track with keep toggle
+// SegmentOverlay Component - displays segment labels on video track
 function SegmentOverlay({
   segment,
   startTime,
   endTime,
   timelineWidth,
   timeline,
-  onToggleSegmentKeep,
 }: {
   segment: SegmentAnalysis;
   startTime: number;
   endTime: number;
   timelineWidth: number;
   timeline?: EditableSegment[];
-  onToggleSegmentKeep?: (id: string) => void;
 }) {
   // Validate segment times
   if (segment.end_time <= segment.start_time || segment.start_time < 0) {
@@ -1256,20 +1254,10 @@ function SegmentOverlay({
   };
 
   const colors = getSegmentColors(segment.label, isKept);
-  const isFluff = segment.label === 'FLUFF';
-  const isClickable = isFluff;
-
-  const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    // Only allow toggling FLUFF segments
-    if (isClickable && timelineSegment && onToggleSegmentKeep) {
-      onToggleSegmentKeep(timelineSegment.id);
-    }
-  };
 
   return (
     <div
-      className={`absolute top-0 bottom-0 border-l border-r transition-opacity ${isClickable ? 'cursor-pointer hover:opacity-90' : 'cursor-default'}`}
+      className="absolute top-0 bottom-0 border-l border-r transition-opacity cursor-default"
       style={{
         left: `${leftPos}px`,
         width: `${segmentWidth}px`,
@@ -1277,11 +1265,7 @@ function SegmentOverlay({
         backgroundColor: colors.bg,
         borderColor: colors.border,
       }}
-      title={isClickable 
-        ? `${segment.label} (${segment.rating.toFixed(2)}): ${segment.reason}\nClick to ${isKept ? 'remove' : 'restore'}`
-        : `${segment.label} (${segment.rating.toFixed(2)}): ${segment.reason}`
-      }
-      onClick={handleClick}
+      title={`${segment.label} (${segment.rating.toFixed(2)}): ${segment.reason}`}
     >
       {/* Grey "unavailable" overlay for cut segments */}
       {!isKept && (
@@ -1445,7 +1429,6 @@ function TimelineTrack({
           endTime={endTime}
           timelineWidth={timelineWidth}
           timeline={timeline}
-          onToggleSegmentKeep={onToggleSegmentKeep}
         />
       ))}
       
