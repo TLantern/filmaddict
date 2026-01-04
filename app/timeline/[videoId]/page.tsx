@@ -268,8 +268,13 @@ export default function TimelinePage() {
       setHighlights(highlightsData.highlights);
       
       // Filter and validate segments - remove invalid ones (end < start) and sort by start_time
+      // Ensure all segments have a label (segments from /segments endpoint are FLUFF by default)
       const validSegments = segmentsData.segments
         .filter(segment => segment.end_time > segment.start_time && segment.start_time >= 0)
+        .map(segment => ({
+          ...segment,
+          label: segment.label || ("FLUFF" as const), // Default to FLUFF if label is missing
+        }))
         .sort((a, b) => a.start_time - b.start_time);
       
       // Store all segments for filtering
