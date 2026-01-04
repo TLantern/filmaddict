@@ -543,26 +543,43 @@ export default function TimelinePage() {
 
   const handleTimeUpdate = useCallback((time: number) => {
     // Engine-driven gap skipping
-    // Only skip gaps when NOT viewing "ALL" filter - unmarked segments should play normally in "ALL" mode
-    if (segmentFilter !== "ALL" && engineRef.current && playerRef.current) {
+    // Only skip gaps that are explicitly disabled segments - never skip untagged segments
+    if (engineRef.current && playerRef.current) {
       const frame = engineRef.current.resolve(time, 'video');
       
       if (frame.isGap) {
-        // We're in a gap - skip to the next enabled clip
-        const nextClip = engineRef.current.findNextEnabledClip(time, 'video');
-        if (nextClip) {
-          playerRef.current.seek(nextClip.start);
-          return; // Don't update state until we're in valid region
-        } else {
-          // No more clips - pause at end
-          playerRef.current.pause();
-          setIsPlaying(false);
+        // Check if this gap corresponds to a disabled clip (explicitly removed segment)
+        // If no disabled clip exists at this time, it's an untagged segment - don't skip
+        const allClips = engineRef.current.getTracks()
+          .filter(t => t.type === 'video')
+          .flatMap(t => t.clips);
+        
+        const isDisabledSegment = allClips.some(clip => {
+          if (!clip.enabled) {
+            const clipEnd = clip.start + (clip.out - clip.in);
+            return time >= clip.start && time < clipEnd;
+          }
+          return false;
+        });
+        
+        // Only skip if this is an explicitly disabled segment, not an untagged region
+        if (isDisabledSegment) {
+          const nextClip = engineRef.current.findNextEnabledClip(time, 'video');
+          if (nextClip) {
+            playerRef.current.seek(nextClip.start);
+            return; // Don't update state until we're in valid region
+          } else {
+            // No more clips - pause at end
+            playerRef.current.pause();
+            setIsPlaying(false);
+          }
         }
+        // If it's not a disabled segment, it's untagged content - let it play normally
       }
     }
     
     setCurrentTime(time);
-  }, [segmentFilter]);
+  }, []);
 
   const handleDurationChange = (dur: number) => {
     if (dur > 0) {

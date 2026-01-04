@@ -1232,6 +1232,10 @@ function SegmentOverlay({
         text: 'rgb(113, 113, 122)', // zinc-500
       };
     }
+    // If FLUFF segment is kept, don't show red overlay - return null to hide it
+    if (label === 'FLUFF' && kept) {
+      return null;
+    }
     if (label === 'FLUFF') {
       return {
         bg: 'rgba(239, 68, 68, 0.3)', // red-500 with 30% opacity
@@ -1254,6 +1258,11 @@ function SegmentOverlay({
   };
 
   const colors = getSegmentColors(segment.label, isKept);
+  
+  // Don't render overlay for kept FLUFF segments (they should not show red overlay)
+  if (colors === null) {
+    return null;
+  }
 
   return (
     <div
