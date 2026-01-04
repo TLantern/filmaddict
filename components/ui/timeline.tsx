@@ -1256,17 +1256,20 @@ function SegmentOverlay({
   };
 
   const colors = getSegmentColors(segment.label, isKept);
+  const isFluff = segment.label === 'FLUFF';
+  const isClickable = isFluff;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (timelineSegment && onToggleSegmentKeep) {
+    // Only allow toggling FLUFF segments
+    if (isClickable && timelineSegment && onToggleSegmentKeep) {
       onToggleSegmentKeep(timelineSegment.id);
     }
   };
 
   return (
     <div
-      className={`absolute top-0 bottom-0 border-l border-r cursor-pointer hover:opacity-90 transition-opacity`}
+      className={`absolute top-0 bottom-0 border-l border-r transition-opacity ${isClickable ? 'cursor-pointer hover:opacity-90' : 'cursor-default'}`}
       style={{
         left: `${leftPos}px`,
         width: `${segmentWidth}px`,
@@ -1274,7 +1277,10 @@ function SegmentOverlay({
         backgroundColor: colors.bg,
         borderColor: colors.border,
       }}
-      title={`${segment.label} (${segment.rating.toFixed(2)}): ${segment.reason}\nClick to ${isKept ? 'remove' : 'restore'}`}
+      title={isClickable 
+        ? `${segment.label} (${segment.rating.toFixed(2)}): ${segment.reason}\nClick to ${isKept ? 'remove' : 'restore'}`
+        : `${segment.label} (${segment.rating.toFixed(2)}): ${segment.reason}`
+      }
       onClick={handleClick}
     >
       {/* Grey "unavailable" overlay for cut segments */}

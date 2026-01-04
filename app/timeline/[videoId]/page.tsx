@@ -32,7 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Save, Undo2, Redo2, Download, Pencil } from "lucide-react";
+import { Save, Undo2, Redo2, Download, Pencil, Info, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { ExportDialog } from "@/components/ui/export-dialog";
 import { exportVideo, ExportFormat } from "@/lib/api";
 import {
@@ -115,6 +115,8 @@ export default function TimelinePage() {
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState<Set<string>>(new Set());
   const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingSlide, setOnboardingSlide] = useState(0);
   
   // New state for shortcuts features
   const [activeTool, setActiveTool] = useState<'blade' | 'select' | 'trim' | null>(null);
@@ -534,21 +536,10 @@ export default function TimelinePage() {
 
   const handleSeek = useCallback((time: number) => {
     if (playerRef.current) {
-      let seekTime = time;
-      
-      // Only skip gaps when NOT viewing "ALL" filter - allow seeking to unmarked segments in "ALL" mode
-      if (segmentFilter !== "ALL" && gaps.length > 0) {
-        for (const [gapStart, gapEnd] of gaps) {
-          if (seekTime >= gapStart && seekTime < gapEnd) {
-            seekTime = gapEnd;
-            break;
-          }
-        }
-      }
-      
-      playerRef.current.seek(seekTime);
+      // Allow seeking to any position, including gaps - no gap-skipping on seek
+      playerRef.current.seek(time);
     }
-  }, [gaps, segmentFilter]);
+  }, []);
 
   const handleTimeUpdate = useCallback((time: number) => {
     // Engine-driven gap skipping
@@ -1885,38 +1876,56 @@ export default function TimelinePage() {
                             <p>Next segment ({isMac ? '⌘' : 'Ctrl'} + →)</p>
                           </TooltipContent>
                         </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => {
+                                setShowOnboarding(true);
+                                setOnboardingSlide(0);
+                              }}
+                              className="w-7 h-7 rounded-full border border-zinc-600 bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors"
+                            >
+                              <Info className="w-4 h-4 text-zinc-400" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>How to use the editor</p>
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 ml-[-20px]">
-                      <Button
-                        onClick={handleImplementAllFluff}
-                        variant="mono"
-                        size="md"
-                        title="Grey out all FLUFF segments"
-                        className="!bg-[#2563EB] hover:!bg-[#1D4ED8] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
-                      >
-                        Implement All
-                      </Button>
-                      <Button
-                        onClick={handleAcceptSegment}
-                        variant="primary"
-                        size="md"
-                        className="!bg-[#DC2626] hover:!bg-[#B91C1C] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
-                        title="Delete - Press 'A'"
-                      >
-                        Delete
-                      </Button>
-                      <Button
-                        onClick={handleDeclineSegment}
-                        variant="mono"
-                        size="md"
-                        className="!bg-[#16A34A] hover:!bg-[#15803D] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
-                        title="Keep - Press 'D'"
-                      >
-                        Keep
-                      </Button>
-                    </div>
+                    {segmentFilter !== "HIGHLIGHTS" && (
+                      <div className="flex items-center gap-2 ml-[-20px]">
+                        <Button
+                          onClick={handleImplementAllFluff}
+                          variant="mono"
+                          size="md"
+                          title="Grey out all FLUFF segments"
+                          className="!bg-[#2563EB] hover:!bg-[#1D4ED8] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
+                        >
+                          Implement All
+                        </Button>
+                        <Button
+                          onClick={handleAcceptSegment}
+                          variant="primary"
+                          size="md"
+                          className="!bg-[#DC2626] hover:!bg-[#B91C1C] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
+                          title="Delete - Press 'A'"
+                        >
+                          Delete
+                        </Button>
+                        <Button
+                          onClick={handleDeclineSegment}
+                          variant="mono"
+                          size="md"
+                          className="!bg-[#16A34A] hover:!bg-[#15803D] !text-white !shadow-[0_6px_20px_rgba(0,0,0,0.25)] !rounded-[10px] !font-semibold transition-all duration-150 hover:scale-105 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
+                          title="Keep - Press 'D'"
+                        >
+                          Keep
+                        </Button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1997,6 +2006,201 @@ export default function TimelinePage() {
         onExport={handleExportVideo}
         pendingCutsCount={gaps.length}
       />
+      <Dialog open={showOnboarding} onOpenChange={setShowOnboarding}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>How to Use the Editor</span>
+              <button
+                onClick={() => setShowOnboarding(false)}
+                className="text-zinc-400 hover:text-zinc-200 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-y-auto py-4">
+            {onboardingSlide === 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white">Welcome to the Video Editor</h3>
+                <p className="text-zinc-300">
+                  This editor helps you quickly review and edit your video by marking segments as "FLUFF" (to remove) or "HIGHLIGHTS" (to keep).
+                </p>
+                <div className="bg-zinc-800 rounded-lg p-4 space-y-2">
+                  <h4 className="font-medium text-white">Key Features:</h4>
+                  <ul className="list-disc list-inside space-y-1 text-zinc-300 text-sm">
+                    <li>Review segments one by one or click on the timeline</li>
+                    <li>Mark FLUFF segments to remove unwanted content</li>
+                    <li>Keep HIGHLIGHTS to preserve the best moments</li>
+                    <li>Use filters to view FLUFF, HIGHLIGHTS, or ALL segments</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+            
+            {onboardingSlide === 1 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white">Timeline Overview</h3>
+                <p className="text-zinc-300">
+                  The timeline at the bottom shows all your video segments:
+                </p>
+                <div className="space-y-3">
+                  <div className="bg-red-500/20 border border-red-500/50 rounded p-3">
+                    <p className="text-sm text-red-300"><span className="font-medium">Red segments</span> = FLUFF (suggested for removal)</p>
+                  </div>
+                  <div className="bg-purple-500/20 border border-purple-500/50 rounded p-3">
+                    <p className="text-sm text-purple-300"><span className="font-medium">Purple segments</span> = HIGHLIGHTS (suggested to keep)</p>
+                  </div>
+                  <div className="bg-zinc-700/50 border border-zinc-600 rounded p-3">
+                    <p className="text-sm text-zinc-400"><span className="font-medium">Grey segments</span> = Disabled/Removed segments</p>
+                  </div>
+                </div>
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 space-y-2">
+                  <h4 className="font-medium text-white">Click to Enable/Disable</h4>
+                  <p className="text-sm text-zinc-300">
+                    <strong>Click any FLUFF segment</strong> (red) on the timeline to toggle it:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-sm text-zinc-300 ml-2">
+                    <li><strong>First click:</strong> Disables the segment (turns grey) - it will be removed in export</li>
+                    <li><strong>Click again:</strong> Re-enables the segment (turns red again) - it will be kept in export</li>
+                  </ul>
+                  <p className="text-xs text-zinc-400 mt-2">
+                    Note: HIGHLIGHTS segments cannot be disabled - they're protected to preserve your best moments.
+                  </p>
+                </div>
+              </div>
+            )}
+            
+            {onboardingSlide === 2 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white">Reviewing Segments</h3>
+                <p className="text-zinc-300">
+                  Use the segment review controls to navigate through your video:
+                </p>
+                <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-8 bg-zinc-700 rounded text-xs flex items-center justify-center text-white">← Prev</div>
+                    <span className="text-sm text-zinc-300">Navigate to previous segment</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-8 bg-zinc-700 rounded text-xs flex items-center justify-center text-white">Next →</div>
+                    <span className="text-sm text-zinc-300">Navigate to next segment</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-24 h-8 bg-red-600 rounded text-xs flex items-center justify-center text-white">Delete</div>
+                    <span className="text-sm text-zinc-300">Remove current segment (or press 'A')</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-20 h-8 bg-green-600 rounded text-xs flex items-center justify-center text-white">Keep</div>
+                    <span className="text-sm text-zinc-300">Keep current segment (or press 'D')</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-28 h-8 bg-blue-600 rounded text-xs flex items-center justify-center text-white">Implement All</div>
+                    <span className="text-sm text-zinc-300">Quickly disable all FLUFF segments at once</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {onboardingSlide === 3 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white">Filters</h3>
+                <p className="text-zinc-300">
+                  Use the filter buttons to focus on specific segment types:
+                </p>
+                <div className="space-y-3">
+                  <div className="bg-zinc-800 rounded-lg p-4">
+                    <h4 className="font-medium text-white mb-2">ALL</h4>
+                    <p className="text-sm text-zinc-300">Shows all segments (FLUFF and HIGHLIGHTS). All video content plays normally.</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-4">
+                    <h4 className="font-medium text-white mb-2">FLUFF</h4>
+                    <p className="text-sm text-zinc-300">Shows only segments suggested for removal. Gap-skipping is enabled during playback.</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-4">
+                    <h4 className="font-medium text-white mb-2">HIGHLIGHTS</h4>
+                    <p className="text-sm text-zinc-300">Shows only highlight segments. These cannot be disabled or removed.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {onboardingSlide === 4 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-white">Exporting Your Video</h3>
+                <p className="text-zinc-300">
+                  Once you've marked all the segments you want to remove:
+                </p>
+                <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <span className="text-lg">1.</span>
+                    <div>
+                      <p className="text-sm text-zinc-300">Click the <strong className="text-white">Export</strong> button in the top toolbar</p>
+                      <p className="text-xs text-zinc-400 mt-1">Keyboard shortcut: {isMac ? '⌘' : 'Ctrl'} + E</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="text-lg">2.</span>
+                    <p className="text-sm text-zinc-300">Choose your export format (MP4, MOV, WebM, etc.)</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="text-lg">3.</span>
+                    <p className="text-sm text-zinc-300">Wait for processing (typically 5-10 minutes)</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="text-lg">4.</span>
+                    <p className="text-sm text-zinc-300">Download your edited video with all marked segments removed</p>
+                  </div>
+                </div>
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded p-3">
+                  <p className="text-sm text-blue-300">
+                    <strong>Note:</strong> Changes are preview-only until you export. Exporting applies all your edits to create the final video.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center justify-between pt-4 border-t border-zinc-700">
+            <button
+              onClick={() => setOnboardingSlide(Math.max(0, onboardingSlide - 1))}
+              disabled={onboardingSlide === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-300 transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Previous
+            </button>
+            <div className="flex items-center gap-2">
+              {[0, 1, 2, 3, 4].map((index) => (
+                <button
+                  key={index}
+                  onClick={() => setOnboardingSlide(index)}
+                  className={`w-2 h-2 rounded-full transition-colors ${
+                    onboardingSlide === index ? 'bg-white' : 'bg-zinc-600'
+                  }`}
+                />
+              ))}
+            </div>
+            {onboardingSlide < 4 ? (
+              <button
+                onClick={() => setOnboardingSlide(onboardingSlide + 1)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowOnboarding(false)}
+                className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white transition-colors"
+              >
+                Got it!
+              </button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 }
