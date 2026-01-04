@@ -1031,19 +1031,37 @@ function SegmentOverlay({
   endTime: number;
   timelineWidth: number;
 }) {
+  // #region agent log
+  console.log('[DEBUG] SegmentOverlay entry', {label: segment.label, labelType: typeof segment.label, startTime: segment.start_time, endTime: segment.end_time, visibleStart: startTime, visibleEnd: endTime});
+  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'timeline.tsx:1034',message:'SegmentOverlay entry',data:{label:segment.label,labelType:typeof segment.label,labelLength:segment.label?.length,startTime:segment.start_time,endTime:segment.end_time,visibleStart:startTime,visibleEnd:endTime},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+
   // Validate segment times
   if (segment.end_time <= segment.start_time || segment.start_time < 0) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'timeline.tsx:1036',message:'SegmentOverlay early return: invalid times',data:{label:segment.label,startTime:segment.start_time,endTime:segment.end_time},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     return null; // Skip invalid segments
   }
   
   // Check if segment is outside visible time range
-  if (segment.end_time < startTime || segment.start_time > endTime) return null;
+  if (segment.end_time < startTime || segment.start_time > endTime) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'timeline.tsx:1040',message:'SegmentOverlay early return: outside visible range',data:{label:segment.label,segmentStart:segment.start_time,segmentEnd:segment.end_time,visibleStart:startTime,visibleEnd:endTime},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    return null;
+  }
 
   const segmentStart = Math.max(segment.start_time, startTime);
   const segmentEnd = Math.min(segment.end_time, endTime);
   const timeRange = endTime - startTime;
   
-  if (timeRange <= 0 || timelineWidth <= 0) return null;
+  if (timeRange <= 0 || timelineWidth <= 0) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'timeline.tsx:1058',message:'SegmentOverlay early return: invalid timeRange or width',data:{label:segment.label,timeRange,timelineWidth},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    return null;
+  }
   
   const startPercent = ((segmentStart - startTime) / timeRange) * 100;
   const widthPercent = ((segmentEnd - segmentStart) / timeRange) * 100;
@@ -1053,10 +1071,16 @@ function SegmentOverlay({
 
   // Color coding based on label
   const getSegmentColors = (label: string) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'timeline.tsx:1055',message:'getSegmentColors called',data:{label,labelType:typeof label,labelLength:label?.length,isFLUFF:label==='FLUFF',charCodes:label?.split('').map(c=>c.charCodeAt(0))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     if (label === 'FLUFF') {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'timeline.tsx:1056',message:'FLUFF label matched, returning red colors',data:{label},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       return {
-        bg: 'rgba(239, 68, 68, 0.3)', // red-500 with 30% opacity
-        border: 'rgba(239, 68, 68, 0.5)', // red-500 with 50% opacity
+        bg: 'rgba(239, 68, 68, 0.5)', // red-500 with 50% opacity
+        border: 'rgba(239, 68, 68, 0.7)', // red-500 with 70% opacity
         text: 'rgb(252, 165, 165)', // red-300
       };
     }
@@ -1067,6 +1091,9 @@ function SegmentOverlay({
         text: 'rgb(196, 181, 253)', // purple-300
       };
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'timeline.tsx:1070',message:'Label not FLUFF or HIGHLIGHTS, returning default colors',data:{label},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     return {
       bg: 'rgba(113, 113, 122, 0.2)', // zinc-500 with 20% opacity
       border: 'rgba(113, 113, 122, 0.3)', // zinc-400 with 30% opacity
@@ -1075,16 +1102,21 @@ function SegmentOverlay({
   };
 
   const colors = getSegmentColors(segment.label);
+  // #region agent log
+  console.log('[DEBUG] SegmentOverlay computed colors', {label: segment.label, colors, segmentWidth, leftPos, bg: colors.bg, border: colors.border});
+  fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'timeline.tsx:1077',message:'SegmentOverlay computed colors',data:{label:segment.label,colors,segmentWidth,leftPos},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
 
   return (
     <div
-      className="absolute top-0 bottom-0 border-l border-r pointer-events-none"
+      className="absolute top-0 bottom-0 pointer-events-none"
       style={{
         left: `${leftPos}px`,
         width: `${segmentWidth}px`,
-        zIndex: 30, // Above video blocks (which are z-10 or z-20)
+        zIndex: 35, // Above video blocks and selected items (which are z-10, z-20, or z-30)
         backgroundColor: colors.bg,
-        borderColor: colors.border,
+        borderLeft: `2px solid ${colors.border}`,
+        borderRight: `2px solid ${colors.border}`,
       }}
       title={`${segment.label} (${segment.rating.toFixed(2)}): ${segment.reason}`}
     >
@@ -1149,6 +1181,15 @@ function TimelineTrack({
 
   // Only show segment overlays on video tracks (trackIndex 0)
   const showSegments = track.trackIndex === 0 && segments;
+
+  // #region agent log
+  if (showSegments && segments) {
+    console.log('[DEBUG] TimelineTrack segments received', {trackIndex: track.trackIndex, segmentsCount: segments.length, segmentLabels: segments.map(s => ({label: s.label, start: s.start_time, end: s.end_time}))});
+    fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'timeline.tsx:1151',message:'TimelineTrack segments received',data:{trackIndex:track.trackIndex,segmentsCount:segments.length,segmentLabels:segments.map(s=>({label:s.label,start:s.start_time,end:s.end_time}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+  } else {
+    console.log('[DEBUG] TimelineTrack segments NOT shown', {trackIndex: track.trackIndex, hasSegments: !!segments, segmentsLength: segments?.length});
+  }
+  // #endregion
 
   return (
     <div

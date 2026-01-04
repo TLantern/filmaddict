@@ -19,7 +19,8 @@ export function getApiBaseUrl(): string {
   if (!url) {
     throw new Error("NEXT_PUBLIC_API_URL environment variable is required");
   }
-  return url;
+  // Remove trailing slash to prevent double slashes in URLs
+  return url.replace(/\/+$/, '');
 }
 
 // Helper to add ngrok bypass header if using ngrok

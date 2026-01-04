@@ -2010,10 +2010,17 @@ export default function TimelinePage() {
             activeSequenceId={activeSequenceId}
             onSequenceChange={handleSequenceChange}
             onTrackControlChange={handleTrackControlChange}
-            segments={segments.filter(segment => {
-              const segmentKey = `${segment.start_time}-${segment.end_time}`;
-              return !acceptedSegments.has(segmentKey) && !keptSegments.has(segmentKey);
-            })}
+            segments={(() => {
+              const filtered = segments.filter(segment => {
+                const segmentKey = `${segment.start_time}-${segment.end_time}`;
+                return !acceptedSegments.has(segmentKey) && !keptSegments.has(segmentKey);
+              });
+              // #region agent log
+              console.log('[DEBUG] Segments filtered before Timeline', {totalSegments: segments.length, filteredCount: filtered.length, fluffCount: filtered.filter(s => s.label === 'FLUFF').length, segmentLabels: filtered.map(s => ({label: s.label, start: s.start_time, end: s.end_time})), acceptedCount: acceptedSegments.size, keptCount: keptSegments.size});
+              fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'timeline/[videoId]/page.tsx:2013',message:'Segments filtered before Timeline',data:{totalSegments:segments.length,filteredCount:filtered.length,fluffCount:filtered.filter(s=>s.label==='FLUFF').length,segmentLabels:filtered.map(s=>({label:s.label,start:s.start_time,end:s.end_time})),acceptedCount:acceptedSegments.size,keptCount:keptSegments.size},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+              // #endregion
+              return filtered;
+            })()}
             onBladeTool={handleBladeTool}
             onSelectTool={handleSelectTool}
             onTrimTool={handleTrimTool}

@@ -66,7 +66,10 @@ export function Navbar() {
             </SignedIn>
             <SignedOut>
               <button 
-                className="px-4 py-2 bg-[#e3b54a] text-white rounded-lg hover:bg-[#d1a643] transition-colors text-sm font-bold disabled:opacity-50"
+                className="px-4 py-2 bg-[#e3b54a] text-black border border-[#b8922f] rounded-lg hover:bg-[#d1a643] transition-colors text-sm font-bold disabled:opacity-50"
+                style={{ 
+                  textShadow: '0 0 2px white, 0 0 4px rgba(255, 255, 255, 0.5)'
+                }}
                 onClick={handleGoogleAuth}
                 disabled={!signInLoaded}
               >
