@@ -186,16 +186,18 @@ export default function TimelinePage() {
     const clip = engineRef.current.findClipById(id);
     if (clip && clip.enabled) {
       console.log('[toggleSegmentKeep] Disabling:', { start: clip.start, end: clip.start + (clip.out - clip.in) });
-      
-      // Move playhead to end of the deleted segment
-      const clipEnd = clip.start + (clip.out - clip.in);
-      if (playerRef.current) {
-        playerRef.current.seek(clipEnd);
-      }
     }
+    
+    // Prevent auto-advance when toggling segments
+    isManualNavigation.current = true;
     
     // Dispatch mutation to engine
     engineRef.current.mutate({ type: 'TOGGLE_CLIP', clipId: id });
+    
+    // Reset flag after a short delay to allow normal time-based tracking
+    setTimeout(() => {
+      isManualNavigation.current = false;
+    }, 500);
   }, []);
 
   // Disable all FLUFF segments immediately
@@ -644,10 +646,7 @@ export default function TimelinePage() {
       toggleSegmentKeep(timelineSegment.id);
     }
     
-    // Advance to next segment
-    if (currentSegmentIndex < segments.length - 1) {
-      setCurrentSegmentIndex(currentSegmentIndex + 1);
-    }
+    // Don't auto-advance - user must click Next/Prev to navigate
   }, [currentSegmentIndex, segments, timeline, toggleSegmentKeep]);
 
   // Decline segment - just advance to next (keep is already true by default)
