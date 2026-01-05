@@ -46,10 +46,15 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowProcessingMessage(true);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (selectedFile || youtubeUrl) {
       setShowProcessingMessage(true);
-    } else {
-      setShowProcessingMessage(false);
     }
   }, [selectedFile, youtubeUrl]);
 
@@ -212,7 +217,7 @@ export default function LandingPage() {
         subtitle="For long-form videos before you open Premiere or Adobe"
       >
         <Card className="bg-white/5 backdrop-blur-md border-white/10 mb-12">
-          <CardContent className="p-8">
+          <CardContent className="grow relative p-8">
             <form onSubmit={handleSubmit} className="space-y-6">
               <div
                 onDragOver={handleDragOver}
@@ -281,17 +286,15 @@ export default function LandingPage() {
                   loading={loading}
                   active={!!(selectedFile || youtubeUrl)}
                 />
-                <div
-                  className={`overflow-hidden transition-all duration-500 ease-in-out ${
-                    showProcessingMessage ? "max-h-24 opacity-100 mt-2" : "max-h-0 opacity-0 mt-0"
-                  }`}
-                >
-                  <p className="text-center text-white/80 text-sm">
-                    It typically takes about 5–10 minutes. You're free to step away and come back once it's finished.
-                  </p>
-                </div>
               </div>
             </form>
+            <p
+              className={`absolute bottom-4 left-1/2 -translate-x-1/2 text-center text-white/80 text-sm transition-opacity duration-500 ${
+                showProcessingMessage ? "opacity-100" : "opacity-0"
+              }`}
+            >
+              It typically takes about 5–10 minutes. You're free to step away and come back once it's finished.
+            </p>
           </CardContent>
         </Card>
 
