@@ -57,7 +57,7 @@ export default function LandingPage() {
         error: video.error ? { code: video.error.code, message: video.error.message } : null,
         ...extra
       };
-      fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:45',message:`Video ${event}`,data:state,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
+      // Debug logging removed - no longer needed
     };
 
     const logBrowserEnv = () => {
@@ -73,10 +73,8 @@ export default function LandingPage() {
         language: navigator.language,
         cookieEnabled: navigator.cookieEnabled
       };
-      fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:65',message:'Browser environment',data:env,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+      // Debug logging removed - no longer needed
     };
-
-    logBrowserEnv();
 
     const video = videoRef.current;
     if (!video) return;
@@ -146,7 +144,7 @@ export default function LandingPage() {
     const checkDimensions = () => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        fetch('http://127.0.0.1:7242/ingest/8a945fc1-91d9-427e-94f3-521ae7e41090',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:145',message:'Container dimensions',data:{width:rect.width,height:rect.height,top:rect.top,left:rect.left},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // Debug logging removed - no longer needed
       }
       if (video) {
         const rect = video.getBoundingClientRect();
