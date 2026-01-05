@@ -91,21 +91,21 @@ export function VerdictPanel({ explanation, videoId, startTime, endTime }: Verdi
                 <Button
                   onClick={() => handleExport("9:16")}
                   disabled={exporting["9:16"]}
-                  className="flex-1 text-xs py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700"
+                  className="flex-1 text-xs py-1.5 bg-white text-black border border-white hover:bg-white hover:shadow-[0_0_15px_rgba(255,255,255,0.6)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {exporting["9:16"] ? "Exporting..." : "Export 9:16"}
                 </Button>
                 <Button
                   onClick={() => handleExport("1:1")}
                   disabled={exporting["1:1"]}
-                  className="flex-1 text-xs py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700"
+                  className="flex-1 text-xs py-1.5 bg-white text-black border border-white hover:bg-white hover:shadow-[0_0_15px_rgba(255,255,255,0.6)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {exporting["1:1"] ? "Exporting..." : "Export 1:1"}
                 </Button>
                 <Button
                   onClick={() => handleExport("16:9")}
                   disabled={exporting["16:9"]}
-                  className="flex-1 text-xs py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700"
+                  className="flex-1 text-xs py-1.5 bg-white text-black border border-white hover:bg-white hover:shadow-[0_0_15px_rgba(255,255,255,0.6)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {exporting["16:9"] ? "Exporting..." : "Export 16:9"}
                 </Button>

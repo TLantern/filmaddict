@@ -281,13 +281,15 @@ export default function LandingPage() {
                   loading={loading}
                   active={!!(selectedFile || youtubeUrl)}
                 />
-                <p
-                  className={`text-center text-white/60 text-sm transition-opacity duration-500 ${
-                    showProcessingMessage ? "opacity-100" : "opacity-0"
+                <div
+                  className={`overflow-hidden transition-all duration-500 ease-in-out ${
+                    showProcessingMessage ? "max-h-24 opacity-100 mt-2" : "max-h-0 opacity-0 mt-0"
                   }`}
                 >
-                  It typically takes about 5–10 minutes. You’re free to step away and come back once it’s finished.
-                </p>
+                  <p className="text-center text-white/80 text-sm">
+                    It typically takes about 5–10 minutes. You're free to step away and come back once it's finished.
+                  </p>
+                </div>
               </div>
             </form>
           </CardContent>
