@@ -238,7 +238,7 @@ export default function LandingPage() {
                   Continue with Google
                 </Button>
                 <ButtonIconHoverDemo 
-                  className="bg-[#e3b54a] hover:bg-[#d1a643] text-black border border-[#b8922f] font-black"
+                  className="h-11 bg-[#e3b54a] hover:bg-[#d1a643] hover:shadow-[0_0_15px_rgba(255,255,255,0.6)] text-black border border-[#b8922f] font-black transition-all"
                   onClick={handleTrialAuth}
                   disabled={!signInLoaded}
                 >
@@ -541,7 +541,7 @@ export default function LandingPage() {
                   Get Started Free
                 </Button>
                 <ButtonIconHoverDemo 
-                  className="bg-[#e3b54a] hover:bg-[#d1a643] text-black border border-[#b8922f] font-black"
+                  className="h-11 bg-[#e3b54a] hover:bg-[#d1a643] hover:shadow-[0_0_15px_rgba(255,255,255,0.6)] text-black border border-[#b8922f] font-black transition-all"
                   onClick={handleTrialAuth}
                   disabled={!signInLoaded}
                 >
