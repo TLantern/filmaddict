@@ -133,7 +133,7 @@ export default function CheckoutForm(props: CheckoutFormProps) {
     appearance: {
       theme: "stripe",
       variables: {
-        colorPrimary: "#FFD873",
+        colorPrimary: "#000000",
         colorBackground: "#ffffff",
         colorText: "#000000",
         colorDanger: "#df1b41",
