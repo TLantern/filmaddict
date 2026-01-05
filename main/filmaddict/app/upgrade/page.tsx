@@ -71,8 +71,8 @@ export default function UpgradePage() {
     <>
       <SignedIn>
         <div className="min-h-screen bg-black relative overflow-hidden flex items-center">
-          {/* Close button */}
-          <button
+          {/* Close button - commented out for now */}
+          {/* <button
             onClick={handleClose}
             className="absolute top-4 right-4 z-50 w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-full transition-all hover:scale-110"
             aria-label="Close"
@@ -87,7 +87,7 @@ export default function UpgradePage() {
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
-          </button>
+          </button> */}
 
           {/* Gold gradient spots */}
           <div 
