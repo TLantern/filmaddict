@@ -39,10 +39,19 @@ export default function LandingPage() {
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectThumbnails, setProjectThumbnails] = useState<Record<string, string | null>>({});
+  const [showProcessingMessage, setShowProcessingMessage] = useState(false);
 
   useEffect(() => {
     loadProjects();
   }, []);
+
+  useEffect(() => {
+    if (selectedFile || youtubeUrl) {
+      setShowProcessingMessage(true);
+    } else {
+      setShowProcessingMessage(false);
+    }
+  }, [selectedFile, youtubeUrl]);
 
   const loadProjects = async () => {
     try {
@@ -265,12 +274,21 @@ export default function LandingPage() {
                 </Alert>
               )}
 
-              <CleanupButton
-                type="submit"
-                disabled={loading || (!selectedFile && !youtubeUrl)}
-                loading={loading}
-                active={!!(selectedFile || youtubeUrl)}
-              />
+              <div className="space-y-2">
+                <CleanupButton
+                  type="submit"
+                  disabled={loading || (!selectedFile && !youtubeUrl)}
+                  loading={loading}
+                  active={!!(selectedFile || youtubeUrl)}
+                />
+                <p
+                  className={`text-center text-white/60 text-sm transition-opacity duration-500 ${
+                    showProcessingMessage ? "opacity-100" : "opacity-0"
+                  }`}
+                >
+                  It typically takes about 5–10 minutes. You’re free to step away and come back once it’s finished.
+                </p>
+              </div>
             </form>
           </CardContent>
         </Card>

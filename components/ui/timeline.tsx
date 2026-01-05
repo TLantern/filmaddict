@@ -934,7 +934,7 @@ function TimelineItemComponent({
     
     try {
       setIsDownloading(true);
-      const blob = await exportHighlight(videoId, item.start, item.end, duration);
+      const blob = await exportHighlight(videoId, item.start, item.end, "16:9");
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

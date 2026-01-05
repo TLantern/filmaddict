@@ -391,7 +391,8 @@ export async function exportHighlight(
   end: number,
   aspectRatio: "9:16" | "1:1" | "16:9"
 ): Promise<Blob> {
-  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/highlights/export`, {
+  const url = `${getApiBaseUrl()}/videos/${videoId}/highlights/export`;
+  const response = await fetchWithErrorHandling(url, {
     method: "POST",
     headers: {
       ...getHeaders(),
@@ -405,8 +406,18 @@ export async function exportHighlight(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Export failed" }));
-    throw new Error(error.detail || "Export failed");
+    let errorMessage = "Export failed";
+    try {
+      const error = await response.json();
+      errorMessage = error.detail || error.message || `HTTP ${response.status}: ${response.statusText}`;
+    } catch {
+      if (response.status === 404) {
+        errorMessage = `Endpoint not found. Please check that the backend is running and the API URL is correct: ${url}`;
+      } else {
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+    }
+    throw new Error(errorMessage);
   }
 
   return response.blob();
