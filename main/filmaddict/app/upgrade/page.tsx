@@ -48,6 +48,17 @@ export default function UpgradePage() {
     }
   };
 
+  const handleClose = () => {
+    if (showCheckout) {
+      // If in checkout, cancel it first
+      setShowCheckout(false);
+      setCheckoutData(null);
+    } else {
+      // Otherwise, navigate to landing page
+      window.location.href = "/";
+    }
+  };
+
   if (!isLoaded) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -62,7 +73,7 @@ export default function UpgradePage() {
         <div className="min-h-screen bg-black relative overflow-hidden flex items-center">
           {/* Close button */}
           <button
-            onClick={() => router.push("/")}
+            onClick={handleClose}
             className="absolute top-4 right-4 z-50 w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-full transition-all hover:scale-110"
             aria-label="Close"
           >
