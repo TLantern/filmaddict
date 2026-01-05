@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useUser, SignedIn, SignedOut, RedirectToSignIn } from "@clerk/nextjs";
 import { Card, CardBody } from "@heroui/react";
 import CheckoutForm from "@/components/checkout-form";
 
 export default function UpgradePage() {
   const { isLoaded } = useUser();
+  const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<"yearly" | "monthly">("yearly");
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutData, setCheckoutData] = useState<{
@@ -58,6 +60,24 @@ export default function UpgradePage() {
     <>
       <SignedIn>
         <div className="min-h-screen bg-black relative overflow-hidden flex items-center">
+          {/* Close button */}
+          <button
+            onClick={() => router.push("/")}
+            className="absolute top-4 right-4 z-50 w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-full transition-all hover:scale-110"
+            aria-label="Close"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
           {/* Gold gradient spots */}
           <div 
             className="absolute top-0 left-0 w-96 h-96 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"
