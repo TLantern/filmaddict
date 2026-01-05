@@ -34,6 +34,13 @@ def get_aspect_ratio_filter(aspect_ratio: str) -> Optional[str]:
         return None
     
     w, h = ratios[aspect_ratio]
+    
+    # Special case for 1:1 (square) - need to handle both portrait and landscape
+    if aspect_ratio == "1:1":
+        # Crop to square based on smaller dimension, then scale to 1080x1080
+        # Use conditional: if iw >= ih, crop based on ih, else crop based on iw
+        return "crop='if(gte(iw,ih),ih,iw)':'if(gte(iw,ih),ih,iw)':'if(gte(iw,ih),(iw-ih)/2,0)':'if(gte(iw,ih),0,(ih-iw)/2)',scale=1080:1080"
+    
     # Center crop to the target aspect ratio
     return f"crop=ih*{w}/{h}:ih:(iw-ih*{w}/{h})/2:0,scale=1080:-2" if w < h else f"crop=iw:iw*{h}/{w}:0:(ih-iw*{h}/{w})/2,scale=-2:1080"
 
