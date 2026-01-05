@@ -358,9 +358,19 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                   <div className="flex flex-col gap-4">
                     {/* Explanation or Reason */}
                     {explanation ? (
-                      <VerdictPanel explanation={explanation} />
+                      <VerdictPanel 
+                        explanation={explanation}
+                        videoId={videoId}
+                        startTime={currentSegment?.start_time}
+                        endTime={currentSegment?.end_time}
+                      />
                     ) : currentSegment?.explanation ? (
-                      <VerdictPanel explanation={currentSegment.explanation} />
+                      <VerdictPanel 
+                        explanation={currentSegment.explanation}
+                        videoId={videoId}
+                        startTime={currentSegment?.start_time}
+                        endTime={currentSegment?.end_time}
+                      />
                     ) : (
                       <div className="flex flex-col gap-4 p-4 bg-zinc-900 border border-zinc-700 rounded-lg">
                         <div className="pt-2 border-t border-zinc-700">

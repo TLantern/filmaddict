@@ -385,6 +385,33 @@ export async function exportVideo(
   return response.blob();
 }
 
+export async function exportHighlight(
+  videoId: string,
+  start: number,
+  end: number,
+  aspectRatio: "9:16" | "1:1" | "16:9"
+): Promise<Blob> {
+  const response = await fetchWithErrorHandling(`${getApiBaseUrl()}/videos/${videoId}/highlights/export`, {
+    method: "POST",
+    headers: {
+      ...getHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      start_time: start,
+      end_time: end,
+      aspect_ratio: aspectRatio,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: "Export failed" }));
+    throw new Error(error.detail || "Export failed");
+  }
+
+  return response.blob();
+}
+
 export async function reprocessVideo(
   videoId: string
 ): Promise<{ status: string; video_id: string; message: string }> {

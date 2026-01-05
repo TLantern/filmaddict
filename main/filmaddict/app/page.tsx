@@ -208,9 +208,28 @@ export default function LandingPage() {
 
   return (
     <SignedOut>
-      <div className="min-h-screen bg-black">
+      <div className="min-h-screen bg-black relative overflow-hidden">
+        {/* Gold gradient spots */}
+        <div 
+          className="absolute top-20 right-10 w-[500px] h-[500px] rounded-full blur-3xl"
+          style={{
+            background: 'radial-gradient(circle, rgba(255, 216, 115, 0.3) 0%, rgba(255, 216, 115, 0.1) 50%, transparent 100%)'
+          }}
+        />
+        <div 
+          className="absolute top-1/3 left-0 w-[600px] h-[600px] rounded-full blur-3xl -translate-x-1/4"
+          style={{
+            background: 'radial-gradient(circle, rgba(255, 216, 115, 0.25) 0%, rgba(255, 216, 115, 0.08) 50%, transparent 100%)'
+          }}
+        />
+        <div 
+          className="absolute bottom-20 right-1/4 w-[450px] h-[450px] rounded-full blur-3xl"
+          style={{
+            background: 'radial-gradient(circle, rgba(255, 216, 115, 0.3) 0%, rgba(255, 216, 115, 0.1) 50%, transparent 100%)'
+          }}
+        />
         <Navbar />
-        <div className="pt-24 pb-20 px-4 md:px-6 lg:px-8">
+        <div className="pt-24 pb-20 px-4 md:px-6 lg:px-8 animate-fade-in-up">
           <div className="container mx-auto max-w-5xl">
             {/* Hero Section */}
             <div className="text-center mb-12">
