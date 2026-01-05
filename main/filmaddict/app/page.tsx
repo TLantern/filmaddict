@@ -16,25 +16,26 @@ export default function LandingPage() {
 
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-      // Check subscription before redirecting
-      const checkAndRedirect = async () => {
-        try {
-          const response = await fetch("/api/check-subscription");
-          const data = await response.json();
-          
-          if (data.hasSubscription || data.bypassed) {
-            router.push("/dashboard");
-          } else {
-            router.push("/upgrade");
-          }
-        } catch (error) {
-          console.error("Error checking subscription:", error);
-          // On error, redirect to upgrade to be safe
-          router.push("/upgrade");
-        }
-      };
+      // COMMENTED OUT: Stripe paywall check - redirect directly to dashboard
+      // const checkAndRedirect = async () => {
+      //   try {
+      //     const response = await fetch("/api/check-subscription");
+      //     const data = await response.json();
+      //     
+      //     if (data.hasSubscription || data.bypassed) {
+      //       router.push("/dashboard");
+      //     } else {
+      //       router.push("/upgrade");
+      //     }
+      //   } catch (error) {
+      //     console.error("Error checking subscription:", error);
+      //     // On error, redirect to upgrade to be safe
+      //     router.push("/upgrade");
+      //   }
+      // };
       
-      checkAndRedirect();
+      // checkAndRedirect();
+      router.push("/dashboard");
     }
   }, [isLoaded, isSignedIn, router]);
 
@@ -176,8 +177,8 @@ export default function LandingPage() {
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: "/upgrade",
-        redirectUrlComplete: "/upgrade",
+        redirectUrl: "/dashboard",
+        redirectUrlComplete: "/dashboard",
       });
     } catch (error) {
       console.error("Error signing in with Google:", error);
@@ -189,8 +190,8 @@ export default function LandingPage() {
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: "/upgrade",
-        redirectUrlComplete: "/upgrade",
+        redirectUrl: "/dashboard",
+        redirectUrlComplete: "/dashboard",
       });
     } catch (error) {
       console.error("Error signing in with Google:", error);

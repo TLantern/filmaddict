@@ -17,8 +17,8 @@ export function Navbar() {
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: "/upgrade",
-        redirectUrlComplete: "/upgrade",
+        redirectUrl: "/dashboard",
+        redirectUrlComplete: "/dashboard",
       });
     } catch (error) {
       console.error("Error signing in with Google:", error);
