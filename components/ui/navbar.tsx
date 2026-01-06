@@ -49,12 +49,14 @@ export function Navbar() {
             >
               Features
             </Link>
+            {/*
             <Link 
               href="/pricing" 
               className="text-sm font-medium text-white hover:text-gray-300 transition-colors"
             >
               Pricing
             </Link>
+            */}
             <SignedIn>
               <Link 
                 href="/dashboard" 
